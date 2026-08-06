@@ -26,10 +26,7 @@ After completing these steps, when a PR is opened/updated (or a relevant push oc
 4. You **do not** need HUD callbacks yet (L2+)
 ---
 ## Step 1 — Join the `#crcr` Slack channel
-Join the PyTorch **`#crcr`** channel (PyTorch Dev Infra / community Slack).
-Use the channel to:
-- Ask for allowlist / GitHub App installation approval  
-- Confirm dispatches are flowing  
+- Join the PyTorch **`#crcr`** channel (PyTorch Dev Infra / community Slack).
 ---
 ## Step 2 — Request allowlist addition (L1)
 Open a PR against [`pytorch/pytorch`](https://github.com/pytorch/pytorch) that adds your repository under **`L1`** in:
