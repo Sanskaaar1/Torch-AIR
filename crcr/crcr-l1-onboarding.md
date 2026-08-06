@@ -15,12 +15,12 @@ Before starting, confirm all of the following:
    - Repo visibility: **Public**  
    - Settings → Actions → General → Actions permissions allow workflows to run  
 2. **CI builds and tests against PyTorch `main`**  
-   - On each dispatch, check out `pytorch/pytorch` at the **dispatched commit SHA** (PR head SHA or push `after` SHA)  
+   - On each dispatch OR a nightly cron, check out `pytorch/pytorch` at the **dispatched commit SHA** (PR head SHA or push `after` SHA)  
    - Do **not** pin an old release tag or a vendor fork tip as the upstream source of truth for CRCR PR/push events
 ---
 ## Goal of Level 1
 After completing these steps, when a PR is opened/updated (or a relevant push occurs) on `pytorch/pytorch`:
-1. CRCR sends a `repository_dispatch` to your repo  
+1. CRCR sends a `repository_dispatch` to your repo or the trigger is through a nightly cron job
 2. Your workflow starts  
 3. You check out PyTorch at the dispatched SHA and run your RHEL build/test  
 4. You **do not** need HUD callbacks yet (L2+)
@@ -57,6 +57,9 @@ Without the App installed on your repo, allowlist entry alone is not enough for 
 ## Step 4 — Add the dispatch receiver workflow
 Follow the official integration steps:
 **[CI Integration → Integration Steps](https://docs.pytorch.org/docs/2.13/accelerator/ci.html#integration-steps)**
+
+----
+
 ### RHEL + PyTorch expectations for L1
 | Requirement | Guidance |
 |-------------|----------|
