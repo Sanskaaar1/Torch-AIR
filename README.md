@@ -49,11 +49,43 @@ Each report contains:
 
 ## What It Evaluates
 
-| Section |
-|---------|
-| Device Registration, Accelerator Hooks, Device Guard, Memory & Allocator, Operators, Autograd |
-| Python Frontend, Serialization, AMP, torch.compile, Distributed, Dtype Support, Numerical Accuracy, Testing |
-| Streams & Events, RNG, Autoload, DataLoader, Profiler, Ecosystem, Additional PyTorch APIs |
+21 sections grouped into 3 levels. Level 1 carries the most weight in the overall readiness score.
+
+### Level 1
+
+| Section | What It Checks |
+|---------|---------------|
+| Device Registration & Management | Backend name registration, device module binding, device count, current device, multi-device indexing |
+| Operator Registration | Minimal kernel set, extended op coverage, model validation, CPU fallbacks, custom ops |
+| Autograd | AutogradPrivateUse1 dispatch key, backward pass, gradient accumulation, custom autograd functions |
+| Device Guard | DeviceGuardImpl subclass, device/stream save-restore on scope exit |
+| Accelerator Hooks [PU1] | AcceleratorHooksInterface methods — generator, context, pinned memory, device-from-pointer |
+| Memory & Allocator | Device allocator, pinned memory, memory tracking APIs, OOM handling |
+
+### Level 2
+
+| Section | What It Checks |
+|---------|---------------|
+| Serialization & Model Portability | Save/load round-trip, cross-device deserialization, TensorBackendMeta hooks |
+| Python Frontend & Device-Agnostic APIs | `torch.accelerator` module methods, device-agnostic tensor creation |
+| AMP | Autocast registration, GradScaler support, dtype policies |
+| torch.compile / Inductor | DeviceInterface registration, backend compiler, dynamic shapes, graph breaks |
+| Distributed Training | ProcessGroup backend, collective ops (allreduce, broadcast, allgather), multi-node |
+| Dtype Support Matrix | FP32, FP16, BF16, FP8, INT8, complex dtype coverage for compute and storage |
+| Numerical Accuracy | Reference comparisons, tolerance settings, known numerics issues |
+| Testing & Validation | Test infrastructure, OpInfo coverage, CI integration, device-agnostic test patterns |
+
+### Level 3
+
+| Section | What It Checks |
+|---------|---------------|
+| Streams & Events | Stream creation, synchronization, event recording, async transfers |
+| RNG & Generator | Custom Generator subclass, manual seed, fork safety |
+| Autoload [PU1] | `torch.backends` entry point, auto-import on `torch.device("<name>")` |
+| DataLoader Integration | `pin_memory` support, worker-side device transfer |
+| Profiler | Profiler stubs registration, trace export, kineto integration |
+| Ecosystem Compatibility | Compatibility with torchvision, torchaudio, HuggingFace, and other libraries |
+| Additional PyTorch APIs | Sparse tensors, quantization, nested tensors, and other API surfaces |
 
 ## Scoring
 
@@ -105,24 +137,6 @@ Readiness (%) = (sum(section_pct × weight) / sum(weight)) × 100
 
 Tier 1 covers foundational integration (device registration, operators, memory). A backend scoring 100% on Tier 1 but 0% on Tier 3 would still report ~55% readiness. The weighting reflects that foundational integration matters more than ecosystem polish.
 
-### Upstream Candidates
-
-Non-scored advisory section. Features the backend built beyond required integration points, classified as:
-
-- **Generic** — can be added to PyTorch as-is
-- **Needs Abstraction** — solves a common problem but implementation is backend-specific
-- **Hardware-Specific** — unique to this hardware, not upstreamable
-
-Each candidate includes: brief description, relevant files, current state in PyTorch, and motivation.
-
-### Integration Paths
-
-AIR supports two PyTorch integration paths:
-
-- **PrivateUse1 (PU1)** — out-of-tree backend using the PU1 dispatch key. Items marked `[PU1]` in the checklist.
-- **Fork** — in-tree backend with custom device type and dispatch key. Items marked `[Fork]` in the checklist.
-
-Items for the other path are automatically marked `[N/A]`.
 
 ## Output
 
