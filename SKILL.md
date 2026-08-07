@@ -1,5 +1,5 @@
 ---
-name: pytorch-accelerator readiness
+name: pytorch-accelerator-readiness
 description: Evaluate a hardware accelerator's integration readiness with PyTorch. Use when checking if an accelerator (XPU, NPU, openreg, HPU, custom) supports PyTorch's PrivateUse1/fork integration (device management, hooks, operators, AMP, autograd, torch.compile, distributed, profiler, serialization). Optionally evaluates vLLM platform plugin when explicitly requested. Accepts a backend name or source path as argument.
 ---
 
