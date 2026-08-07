@@ -55,52 +55,51 @@ Each section has a **level** (1-3). Level 1 sections are weighted highest.
 
 **Points column**: 2 = fully implemented, 1 = partially implemented, 0 = not implemented, N/A = excluded
 
-**Section score**: `section_pct = sum(score_i * w_i) / sum(max_i * w_i) * 100` (max_i = 2 for non-N/A rows)
+**Section score**: `percentage = sum(score_i * w_i) / sum(max_i * w_i) * 100` (max_i = 2 for non-N/A rows)
 
 **Overall score formula**:
 ```
 weight_r = 1 / level
-Readiness = (sum(section_pct * weight_r) / sum(weight_r)) * 100
+Readiness = (sum(percentage * weight_r) / sum(weight_r)) * 100
 ```
 where the sums are over all applicable sections (excluding fully N/A sections).
 
 ### Section Scores
 
-| Section | Level | Max Pts | Earned | Pct | Weighted |
-|---------|------|---------|--------|-----|----------|
-| **Level 1** | | | | | |
-| Device Registration & Management | 1 | | | | |
-| Operator Registration | 1 | | | | |
-| Autograd | 1 | | | | |
-| Device Guard | 1 | | | | |
-| Accelerator Hooks [PU1] | 1 | | | | |
-| Memory & Allocator | 1 | | | | |
-| **Level 2** | | | | | |
-| Serialization & Model Portability | 2 | | | | |
-| Python Frontend & Device-Agnostic APIs | 2 | | | | |
-| AMP | 2 | | | | |
-| torch.compile / Inductor | 2 | | | | |
-| Distributed Training | 2 | | | | |
-| Dtype Support Matrix | 2 | | | | |
-| Numerical Accuracy | 2 | | | | |
-| Testing & Validation | 2 | | | | |
-| **Level 3** | | | | | |
-| Streams & Events | 3 | | | | |
-| RNG & Generator | 3 | | | | |
-| Autoload [PU1] | 3 | | | | |
-| DataLoader Integration | 3 | | | | |
-| Profiler | 3 | | | | |
-| Ecosystem Compatibility | 3 | | | | |
-| Additional PyTorch APIs | 3 | | | | |
+| Section | Max Pts | Earned | Percentage |
+|---------|---------|--------|------------|
+| **Level 1** | | | |
+| Device Registration & Management | | | |
+| Operator Registration | | | |
+| Autograd | | | |
+| Device Guard | | | |
+| Accelerator Hooks [PU1] | | | |
+| Memory & Allocator | | | |
+| **Level 2** | | | |
+| Serialization & Model Portability | | | |
+| Python Frontend & Device-Agnostic APIs | | | |
+| AMP | | | |
+| torch.compile / Inductor | | | |
+| Distributed Training | | | |
+| Dtype Support Matrix | | | |
+| Numerical Accuracy | | | |
+| Testing & Validation | | | |
+| **Level 3** | | | |
+| Streams & Events | | | |
+| RNG & Generator | | | |
+| Autoload [PU1] | | | |
+| DataLoader Integration | | | |
+| Profiler | | | |
+| Ecosystem Compatibility | | | |
+| Additional PyTorch APIs | | | |
 
 ### Calculation
 
 ```
 Row weight: w_i = 1 / priority_i
-Section Pct = sum(score_i * w_i) / sum(max_i * w_i) * 100  (excluding N/A rows, max_i = 2)
+Percentage = sum(score_i * w_i) / sum(max_i * w_i) * 100  (excluding N/A rows, max_i = 2)
 weight_r = 1 / level
-Weighted = Pct * (1 / level)
-Readiness = (sum(Weighted) / sum(weight_r for applicable sections)) * 100
+Readiness = (sum(Percentage * weight_r) / sum(weight_r for applicable sections)) * 100
 ```
 
 **Readiness**: _____ %
@@ -112,9 +111,8 @@ Readiness = (sum(Weighted) / sum(weight_r for applicable sections)) * 100
 > Advisory only -- does not affect the readiness score.
 
 **Classification key**:
-- **Generic** -- no backend-specific references; could be copy-pasted into `torch/accelerator/` and work for any PU1 backend
+- **Generic** -- no backend-specific references; ready to upstream into `torch/accelerator/` as-is for any PU1 backend
 - **Needs Abstraction** -- solves a problem every backend faces, but implementation references backend-specific internals; upstream path is to define an interface/hook in core
-- **Hardware-Specific** -- solves a problem unique to this hardware; other backends would never need it
 
 _[FILL: For each discovered feature, use this format:]_
 

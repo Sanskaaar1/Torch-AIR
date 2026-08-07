@@ -41,26 +41,26 @@ _[FILL: Write a concise summary covering:
 
 ### Section Scores
 
-| Section | Level | Max Pts | Earned | Pct |
-|---------|-------|---------|--------|-----|
-| PyTorch Prerequisites | 1 | | | |
-| Plugin Registration | 1 | | | |
-| Platform Class | 1 | | | |
-| Attention Backend | 1 | | | |
-| Worker | 1 | | | |
-| Custom Ops | 1 | | | |
-| Model Runner | 2 | | | |
-| KV Cache Management | 2 | | | |
-| Memory Management | 2 | | | |
-| Distributed | 2 | | | |
-| Model Compatibility | 2 | | | |
-| Dtype Support | 2 | | | |
-| Compilation / Graph Capture | 3 | | | |
-| Testing & CI | 3 | | | |
-| Quantization | 3 | | | |
-| Speculative Decoding | 3 | | | |
-| Multimodal | 3 | | | |
-| Profiling | 3 | | | |
+| Section | Max Pts | Earned | Percentage |
+|---------|---------|--------|------------|
+| PyTorch Prerequisites | | | |
+| Plugin Registration | | | |
+| Platform Class | | | |
+| Attention Backend | | | |
+| Worker | | | |
+| Custom Ops | | | |
+| Model Runner | | | |
+| KV Cache Management | | | |
+| Memory Management | | | |
+| Distributed | | | |
+| Model Compatibility | | | |
+| Dtype Support | | | |
+| Compilation / Graph Capture | | | |
+| Testing & CI | | | |
+| Quantization | | | |
+| Speculative Decoding | | | |
+| Multimodal | | | |
+| Profiling | | | |
 
 **Readiness**: _____ %
 
