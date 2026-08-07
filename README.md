@@ -2,6 +2,15 @@
 
 A checklist-based evaluation tool that measures how well a hardware accelerator integrates with PyTorch. It probes source code for device registration, operator coverage, memory management, distributed training, profiling, and more — then produces a scored readiness report.
 
+## Workflow Process Outline:
+- Skill Execution & PR Submission: The accelerator backend executes the skill and submits the comprehensive readiness report as a Pull Request (PR) to PyTorch-AIR repo.
+- Engineering Review: A partner engineering discussion is held to review the overall readiness report and identify target features.
+- Task Assignment & Collaboration: Tasks are assigned based on priority, workload capacity, complexity, and upstream engagement, with both partners collaborating as authors and co-authors on the respective PRs.
+- Issue Creation: Red Hat files the identified issues within the PyTorch GitHub repository.
+- PR Development: The assignees from the previous task assignment phase raise the corresponding PRs with co-authors.
+
+Downstream Code Optimization: Following the successful merging of PRs, the partner initiates a downstream repository cleanup to eliminate redundant logic, ensuring the codebase remains streamlined and maintainable.
+
 ## What It Does
 
 Given a backend name, source path, or GitHub URL, AIR:
