@@ -1,4 +1,4 @@
-# PyTorch Accelerator Integration Readiness (AIR)
+# Torch Accelerator Integration Readiness (AIR)
 
 A checklist-based evaluation tool that measures how well a hardware accelerator integrates with PyTorch. It probes source code for device registration, operator coverage, memory management, distributed training, profiling, and more — then produces a scored readiness report.
 
@@ -25,21 +25,21 @@ Given a backend name, source path, or GitHub URL, AIR:
 ## Usage
 
 ```
-/pytorch-accelerator-readiness <backend>
+/torch-accelerator-readiness <backend>
 ```
 
 Examples:
 
 ```
-/pytorch-accelerator-readiness <accelerator-name>
-/pytorch-accelerator-readiness /path/to/backend/source
-/pytorch-accelerator-readiness https://github.com/org/torch-backend
+/torch-accelerator-readiness <accelerator-name>
+/torch-accelerator-readiness /path/to/backend/source
+/torch-accelerator-readiness https://github.com/org/torch-backend
 ```
 
 To also evaluate vLLM plugin integration, explicitly request it:
 
 ```
-/pytorch-accelerator-readiness <accelerator-name> also check vllm
+/torch-accelerator-readiness <accelerator-name> also check vllm
 ```
 
 Add "also check vllm" to include vLLM plugin evaluation in the report.
@@ -149,8 +149,8 @@ Tier 1 covers foundational integration (device registration, operators, memory).
 
 ## Output
 
-Reports are written to `pytorch-air-report/`:
+Reports are written to `torch-air-report/`:
 
 ```
-pytorch-air-report/pytorch_readiness_report_<backend>.md
+torch-air-report/torch_readiness_report_<backend>.md
 ```

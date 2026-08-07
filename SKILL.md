@@ -1,5 +1,5 @@
 ---
-name: pytorch-accelerator-readiness
+name: torch-accelerator-readiness
 description: Evaluate a hardware accelerator's integration readiness with PyTorch. Use when checking if an accelerator (XPU, NPU, openreg, HPU, custom) supports PyTorch's PrivateUse1/fork integration (device management, hooks, operators, AMP, autograd, torch.compile, distributed, profiler, serialization). Optionally evaluates vLLM platform plugin when explicitly requested. Accepts a backend name or source path as argument.
 ---
 
@@ -27,7 +27,7 @@ text or inline summaries. For each evaluation:
    - `pytorch_checklist.md` for PyTorch evaluation
    - `vllm_checklist.md` for vLLM evaluation
 
-2. **Copy the template** to `pytorch-air-report/` as the working report file
+2. **Copy the template** to `torch-air-report/` as the working report file
 
 3. **Fill every table row** in the copied markdown with:
    - `Points` column: 2 = fully implemented, 1 = partially implemented, 0 = not implemented, N/A = excluded
@@ -95,10 +95,10 @@ Determine what to evaluate:
 
 ## Output Files
 
-Create `pytorch-air-report/` in the current project if it doesn't exist. Write:
-- `pytorch-air-report/pytorch_readiness_report_<backend>.md` -- open-source scored checklist
-- `pytorch-air-report/pytorch_readiness_research_<backend>.md` -- private backend narrative research
-- `pytorch-air-report/vllm_readiness_report_<backend>.md` -- if vLLM scope detected (open-source only)
+Create `torch-air-report/` in the current project if it doesn't exist. Write:
+- `torch-air-report/torch_readiness_report_<backend>.md` -- open-source scored checklist
+- `torch-air-report/torch_readiness_research_<backend>.md` -- private backend narrative research
+- `torch-air-report/vllm_readiness_report_<backend>.md` -- if vLLM scope detected (open-source only)
 - Print combined summary to user at the end
 
 ---
@@ -108,7 +108,7 @@ Create `pytorch-air-report/` in the current project if it doesn't exist. Write:
 ### Templates
 
 Read `~/.claude/skills/check-accelerator-readiness/templates/pytorch_checklist.md`.
-Copy it to `pytorch-air-report/pytorch_readiness_report_<backend>.md` as your working copy.
+Copy it to `torch-air-report/torch_readiness_report_<backend>.md` as your working copy.
 
 ### Pre-Phase: Checklist Refinement via TorchTalk
 
@@ -364,7 +364,7 @@ Fill the score table (sorted by level) at the top of the document, the overall r
 ### Templates
 
 Read `~/.claude/skills/check-accelerator-readiness/templates/vllm_checklist.md`.
-Copy it to `pytorch-air-report/vllm_readiness_report_<backend>.md` as your working copy.
+Copy it to `torch-air-report/vllm_readiness_report_<backend>.md` as your working copy.
 
 ### Prerequisite
 
@@ -479,8 +479,8 @@ After both evaluations, present a combined summary:
 ║    ...                                                       ║
 ║                                                              ║
 ║  Reports:                                                    ║
-║    pytorch-air-report/pytorch_readiness_report_<backend>.md          ║
-║    pytorch-air-report/vllm_readiness_report_<backend>.md             ║
+║    torch-air-report/torch_readiness_report_<backend>.md          ║
+║    torch-air-report/vllm_readiness_report_<backend>.md             ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
@@ -491,4 +491,4 @@ After both evaluations, present a combined summary:
 - For items that cannot be checked (e.g., "CI pipeline"), mark as "Requires manual verification".
 - PyTorch evaluation always runs. vLLM evaluation only runs when the user explicitly requests it.
 - The PyTorch score feeds into vLLM Section 0 as a prerequisite.
-- All output files go in `pytorch-air-report/` (git-ignored).
+- All output files go in `torch-air-report/` (git-ignored).
