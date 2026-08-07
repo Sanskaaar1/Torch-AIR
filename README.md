@@ -1,4 +1,4 @@
-# PyTorch Accelerator Integration Readiness (AIR)
+# Torch Accelerator Integration Readiness (AIR)
 
 A checklist-based evaluation tool that measures how well a hardware accelerator integrates with PyTorch. It probes source code for device registration, operator coverage, memory management, distributed training, profiling, and more — then produces a scored readiness report.
 
@@ -149,8 +149,8 @@ Tier 1 covers foundational integration (device registration, operators, memory).
 
 ## Output
 
-Reports are written to `pytorch-air-report/`:
+Reports are written to `torch-air-report/`:
 
 ```
-pytorch-air-report/pytorch_readiness_report_<backend>.md
+torch-air-report/torch_readiness_report_<backend>.md
 ```
