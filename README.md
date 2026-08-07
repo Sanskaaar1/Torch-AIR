@@ -25,21 +25,21 @@ Given a backend name, source path, or GitHub URL, AIR:
 ## Usage
 
 ```
-/pytorch-accelerator-readiness <backend>
+/torch-accelerator-readiness <backend>
 ```
 
 Examples:
 
 ```
-/pytorch-accelerator-readiness <accelerator-name>
-/pytorch-accelerator-readiness /path/to/backend/source
-/pytorch-accelerator-readiness https://github.com/org/torch-backend
+/torch-accelerator-readiness <accelerator-name>
+/torch-accelerator-readiness /path/to/backend/source
+/torch-accelerator-readiness https://github.com/org/torch-backend
 ```
 
 To also evaluate vLLM plugin integration, explicitly request it:
 
 ```
-/pytorch-accelerator-readiness <accelerator-name> also check vllm
+/torch-accelerator-readiness <accelerator-name> also check vllm
 ```
 
 Add "also check vllm" to include vLLM plugin evaluation in the report.
