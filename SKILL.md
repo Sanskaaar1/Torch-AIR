@@ -479,7 +479,7 @@ After both evaluations, present a combined summary:
 ║    ...                                                       ║
 ║                                                              ║
 ║  Reports:                                                    ║
-║    torch-air-report/pytorch_readiness_report_<backend>.md          ║
+║    torch-air-report/torch_readiness_report_<backend>.md          ║
 ║    torch-air-report/vllm_readiness_report_<backend>.md             ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
