@@ -1,13 +1,13 @@
 ---
 name: torch-accelerator-readiness
-description: Evaluate a hardware accelerator's integration readiness with PyTorch. Use when checking if an accelerator (XPU, NPU, openreg, HPU, custom) supports PyTorch's PrivateUse1/fork integration (device management, hooks, operators, AMP, autograd, torch.compile, distributed, profiler, serialization). Optionally evaluates vLLM platform plugin when explicitly requested. Accepts a backend name or source path as argument.
+description: Evaluate a hardware accelerator's integration readiness with PyTorch. Use when checking if an accelerator (XPU, NPU, openreg, HPU, custom) supports PyTorch's PrivateUse1/fork integration (device management, hooks, operators, AMP, autograd, torch.compile, distributed, profiler, serialization). Accepts a backend name or source path as argument.
 ---
 
 # Check Accelerator Readiness
 
 You are an accelerator integration evaluator. Given a backend name or source
-path, you evaluate its integration readiness with **PyTorch** and optionally
-**vLLM**. You produce scored readiness reports with concrete findings.
+path, you evaluate its integration readiness with **PyTorch**.
+You produce scored readiness reports with concrete findings.
 
 ## Inputs
 
@@ -25,7 +25,6 @@ text or inline summaries. For each evaluation:
 
 1. **Read the checklist template** from `~/.claude/skills/check-accelerator-readiness/templates/`
    - `pytorch_checklist.md` for PyTorch evaluation
-   - `vllm_checklist.md` for vLLM evaluation
 
 2. **Copy the template** to `torch-air-report/` as the working report file
 
@@ -76,30 +75,12 @@ Determine what to evaluate:
 1. **PyTorch readiness** (always): Evaluate using the selected template
    (see Template Selection above)
 
-2. **vLLM readiness** (only on demand): Only evaluate vLLM if the user
-   explicitly requests it (e.g., "also check vLLM", "include vLLM",
-   "for pytorch and vllm"). Do NOT auto-detect or auto-evaluate vLLM.
-
-   When requested, search for:
-   - A `vllm-<name>` or `vllm_<name>` package/repo
-   - `vllm.platform_plugins` entry points in the backend's setup.py
-   - A separate vLLM plugin repo (e.g., `vllm-ascend`, `vllm-hpu`)
-
-   If found, evaluate using
-   `~/.claude/skills/check-accelerator-readiness/templates/vllm_checklist.md`
-
-   For private backends, vLLM assessment is part of the narrative
-   research document -- the evaluator writes a dedicated vLLM section
-   covering API endpoint vs native integration vs disaggregated setups.
-   No separate vLLM checklist is used for private backend evaluations.
-
 ## Output Files
 
 Create `torch-air-report/` in the current project if it doesn't exist. Write:
 - `torch-air-report/torch_readiness_report_<backend>.md` -- open-source scored checklist
 - `torch-air-report/torch_readiness_research_<backend>.md` -- private backend narrative research
-- `torch-air-report/vllm_readiness_report_<backend>.md` -- if vLLM scope detected (open-source only)
-- Print combined summary to user at the end
+- Print summary to user at the end
 
 ---
 
@@ -190,9 +171,6 @@ For each discovered API not already in the checklist:
 Write changes to the template file at
 `~/.claude/skills/check-accelerator-readiness/templates/pytorch_checklist.md`.
 Log all changes (additions, modifications, removals) so the user can review.
-
-**Note**: This refinement applies to the PyTorch checklist only. The vLLM
-checklist is not auto-refined (vLLM is not indexed by TorchTalk).
 
 ---
 
@@ -359,103 +337,9 @@ Fill the score table (sorted by level) at the top of the document, the overall r
 
 ---
 
-## Part 2: vLLM Readiness Evaluation (if applicable)
+## Final Output: Summary
 
-### Templates
-
-Read `~/.claude/skills/check-accelerator-readiness/templates/vllm_checklist.md`.
-Copy it to `torch-air-report/vllm_readiness_report_<backend>.md` as your working copy.
-
-### Prerequisite
-
-The PyTorch readiness score from Part 1 feeds into Section 0 of the vLLM
-checklist. If PyTorch scored below 40%, note this as a blocker
-in the vLLM report.
-
-### Source Discovery
-
-Search for the vLLM plugin:
-- `vllm-<name>`, `vllm_<name>` on GitHub
-- `vllm.platform_plugins` entry in the PyTorch backend's setup.py
-- Separate repo (e.g., `vllm-project/vllm-ascend`)
-
-### Probing Sections 1-19
-
-#### Section 0 -- PyTorch Prerequisites (11 items)
-Auto-fill from Part 1 results.
-
-#### Section 1 -- Plugin Registration (6 items)
-Check `setup.py`/`pyproject.toml` for `vllm.platform_plugins` and `vllm.general_plugins` entry points.
-
-#### Section 2 -- Platform Class (~29 items)
-Find the Platform subclass. Check class variables, device management methods, component getters, compilation methods, config validation, feature flags.
-
-#### Section 3 -- Worker (8 items)
-Find Worker subclass. Check: `init_device()`, `initialize_cache()`, `load_model()`, `get_kv_cache_spec()`, `determine_available_memory()`, `initialize_from_config()`, `compile_or_warm_up_model()`, `execute_model()`.
-
-#### Section 4 -- Model Runner (6 items)
-Find ModelRunner subclass. Check input preparation, forward pass, sampling, InputBatch, SamplingMetadata.
-
-#### Section 5 -- Attention Backend (6 items + features)
-Find attention backends. Check: `validate_configuration()`, paged attention, prefill, decode, chunked prefill, prefix caching, sliding window, GQA, MQA, MLA, FP8 KV cache, speculative decoding, cross-attention.
-
-#### Section 6 -- KV Cache (7 items)
-Check: `update_block_size_for_backend()`, block allocation, copy, swap, hybrid KV cache, custom specs, prefix caching.
-
-#### Section 7 -- Custom Ops (8 items)
-```bash
-grep -r "register_oot\|forward_oot" <path>/ --include="*.py"
-```
-Check: paged_attention, rotary_embedding, rms_norm, silu_and_mul, fused_moe, all_reduce.
-
-#### Section 8 -- Quantization (2 items + methods)
-Check `supported_quantization` list. Search for: FP8, GPTQ, AWQ, SqueezeLLM, INT8, GGUF, BitsAndBytes, Marlin.
-
-#### Section 9 -- Distributed (7 items + collectives)
-Find communicator. Check collectives and parallelism: TP, PP, EP, DP.
-
-#### Section 10 -- Compilation (6 items)
-Check `get_compile_backend()`, static graph, wrapper, pass manager.
-
-#### Section 11 -- Memory Management (5 items)
-Check `determine_available_memory()`, `get_current_memory_usage()`, memory fraction, profiling, swap.
-
-#### Section 12 -- Speculative Decoding (4 items)
-Search for draft model, verification, acceptance/rejection, bonus tokens.
-
-#### Section 13 -- Multimodal (5 items)
-Search for image/video/audio encoder, cross-attention, preprocessing.
-
-#### Section 14 -- Model Compatibility (6 items)
-Check `verify_model_arch()`, supported architectures.
-
-#### Section 15 -- Profiling (5 items)
-Check profiler integration, metrics, stat logger.
-
-#### Section 16 -- Testing (functional + integration + CI)
-Count test files, check CI config.
-
-#### Section 17 -- Dtype Support (7 dtypes)
-Check compute, KV cache, quantization support per dtype.
-
-### Dynamic API Discovery
-
-1. List all Platform methods overridden beyond checklist
-2. List all `@CustomOp.register_oot` registrations
-3. Search for features not in checklist (tool calling, structured output, etc.)
-
-### Scoring (Summary at top of document)
-
-Fill the summary score table (sorted by level) at the top of the document.
-Row weight: `w_i = 1/priority_i`. Section pct: `sum(score_i * w_i) / sum(max_i * w_i) * 100` (max_i=2, excluding N/A).
-Tier weight: `weight_r = 1/level`. Readiness: `(sum(section_pct * weight_r) / sum(weight_r)) * 100`.
-Append Appendix of uncovered APIs.
-
----
-
-## Final Output: Combined Summary
-
-After both evaluations, present a combined summary:
+After evaluation, present a summary:
 
 ```
 ╔══════════════════════════════════════════════════════════════╗
@@ -470,17 +354,8 @@ After both evaluations, present a combined summary:
 ║    Autograd:              18/20  L1  90%                     ║
 ║    ...                                                       ║
 ║                                                              ║
-║  VLLM INTEGRATION (if evaluated)                             ║
-║  Readiness: XX%                                              ║
-║                                                              ║
-║    PyTorch prereqs:       28/28  L1  100%                    ║
-║    Plugin registration:    6/6   L1  100%                    ║
-║    Platform class:        25/29  L1   86%                    ║
-║    ...                                                       ║
-║                                                              ║
-║  Reports:                                                    ║
-║    torch-air-report/torch_readiness_report_<backend>.md          ║
-║    torch-air-report/vllm_readiness_report_<backend>.md             ║
+║  Report:                                                     ║
+║    torch-air-report/torch_readiness_report_<backend>.md      ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
@@ -489,6 +364,4 @@ After both evaluations, present a combined summary:
 - Every probe must be wrapped in try/except. One failure must not stop the evaluation.
 - If the backend is only partially implemented, produce a partial report.
 - For items that cannot be checked (e.g., "CI pipeline"), mark as "Requires manual verification".
-- PyTorch evaluation always runs. vLLM evaluation only runs when the user explicitly requests it.
-- The PyTorch score feeds into vLLM Section 0 as a prerequisite.
 - All output files go in `torch-air-report/` (git-ignored).

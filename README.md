@@ -36,14 +36,6 @@ Examples:
 /torch-accelerator-readiness https://github.com/org/torch-backend
 ```
 
-To also evaluate vLLM plugin integration, explicitly request it:
-
-```
-/torch-accelerator-readiness <accelerator-name> also check vllm
-```
-
-Add "also check vllm" to include vLLM plugin evaluation in the report.
-
 ## Report Structure
 
 Each report contains:
