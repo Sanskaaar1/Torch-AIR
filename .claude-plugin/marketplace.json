@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "torch-air",
+  "description": "Torch Accelerator Integration Readiness — evaluate how well a hardware accelerator integrates with PyTorch",
+  "owner": {
+    "name": "TorchedHat",
+    "url": "https://github.com/TorchedHat"
+  },
+  "plugins": [
+    {
+      "name": "torch-air",
+      "source": {
+        "source": "github",
+        "repo": "TorchedHat/torch-air"
+      },
+      "description": "Evaluate hardware accelerator integration readiness with PyTorch",
+      "homepage": "https://github.com/TorchedHat/torch-air",
+      "license": "Apache-2.0"
+    }
+  ]
+}

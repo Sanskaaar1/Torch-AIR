@@ -1,0 +1,5 @@
+{
+  "name": "torch-air",
+  "description": "Torch Accelerator Integration Readiness — evaluate how well a hardware accelerator integrates with PyTorch",
+  "skills": "./skills/"
+}
