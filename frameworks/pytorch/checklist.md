@@ -625,6 +625,7 @@ For each: forward pass / backward pass / numerics match CUDA (within tolerance)
 | PEFT (LoRA, QLoRA) | 2 | | | |
 | Flash Attention | 2 | | | |
 | triton (if applicable) | 2 | | | |
+| vLLM / TGI (inference) | 2 | | | |
 | Megatron-LM | 3 | | | |
 | torchaudio | 3 | | | |
 | torchtune | 3 | | | |

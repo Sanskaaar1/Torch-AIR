@@ -146,3 +146,21 @@ Reports are written to `torch-air-report/`:
 ```
 torch-air-report/torch_readiness_report_<backend>.md
 ```
+
+## Repository Structure
+
+```
+torch-air/
+├── SKILL.md                          # Orchestrator: input parsing, dispatch, scoring, summary
+├── frameworks/
+│   ├── pytorch/
+│   │   ├── EVAL.md                   # PyTorch evaluation phases and probing instructions
+│   │   ├── checklist.md              # PyTorch readiness checklist template (open-source)
+│   │   ├── checklist_private.md      # Scored checklist for closed-source backends
+│   │   └── research_template_private.md  # Narrative research template for private backends
+├── crcr/
+│   └── crcr-l1-onboarding.md        # CRCR Level 1 onboarding guide
+└── README.md
+```
+
+Adding a new framework: create `frameworks/<name>/` with `EVAL.md` (probing instructions) and `checklist.md` (fillable template), then add the framework to the dispatch table in `SKILL.md`.
