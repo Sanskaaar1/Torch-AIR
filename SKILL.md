@@ -68,6 +68,28 @@ Detection heuristic:
 - Vendor uses model conversion + AOT compilation (not PU1 dispatch)? -> private template
 - User explicitly specifies private/proprietary? -> private template
 
+## Time Estimate
+
+After the backend has been located and its integration path detected (open-source
+vs. private, PrivateUse1 vs. Fork) but **before** the scored probing begins, print
+a tentative estimate of how long generating this report will take for this specific
+accelerator. Judge the range from the runtime drivers you just discovered:
+
+- **Integration path** -- a private/narrative evaluation does web research and is
+  slower than an open-source source-code probe.
+- **Codebase size** -- more source to grep and trace takes longer.
+- **Applicable sections** -- how many of the framework sections apply to this backend.
+
+Present it as a rough range and state clearly that it is an approximation, e.g.:
+
+```
+Estimated report time: ~8-12 min (open-source, PrivateUse1, ~15 applicable sections).
+This is a rough estimate, not a guarantee.
+```
+
+Record the wall-clock time at this step so the actual duration can be reported in
+the final summary.
+
 ## Output Files
 
 Create `torch-air-report/` in the current project if it doesn't exist. Write:
@@ -108,10 +130,35 @@ After evaluation, present a summary:
 ║    Autograd:              18/20  L1  90%                     ║
 ║    ...                                                       ║
 ║                                                              ║
+║  Time:                                                      ║
+║    Estimated (active):   ~8-12 min                           ║
+║    Actual (wall-clock):  18 min                              ║
+║    Actual (active):      11 min                              ║
+║                                                              ║
 ║  Report:                                                     ║
 ║    torch-air-report/torch_readiness_report_<backend>.md      ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
+
+Report three time figures, all measured from the Time Estimate step to report
+completion:
+
+- **Estimated (active)** -- the earlier estimate. It covers active compute/probing
+  time only and never includes time spent waiting on the user.
+- **Actual (wall-clock)** -- total elapsed time, including any waits for permission
+  prompts, clarifying answers, or other user input. Informational only.
+- **Actual (active)** -- wall-clock minus the user-wait spans, i.e. the time
+  actually spent probing and analyzing.
+
+Compare the estimate against **Actual (active)** only, since both exclude user-wait
+and therefore measure the same thing; the wall-clock figure is shown for context
+and is expected to be larger. Use the gap between estimated and actual-active to
+calibrate later estimates within this session, erring toward the observed pace.
+
+The active-time figure is an approximation -- this skill has no precise stopwatch
+across pauses, so estimate the user-wait spans deliberately rather than assuming
+they are zero. Actual time also depends on machine speed and probing depth, so the
+estimate and actual-active will rarely match exactly -- that is expected.
 
 ## Important Notes
 

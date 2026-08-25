@@ -22,18 +22,61 @@ Given a backend name, source path, or GitHub URL, AIR:
 5. Identifies features the backend built that could be upstreamed to PyTorch core
 6. Writes a standalone markdown report
 
+## Installation
+
+AIR is distributed as a Claude Code plugin through its own marketplace. Install it
+from within Claude Code:
+
+1. **Add the marketplace** (GitHub `owner/repo` shorthand):
+
+   ```
+   /plugin marketplace add TorchedHat/torch-air
+   ```
+
+2. **Install the plugin** (`plugin-name@marketplace-name`):
+
+   ```
+   /plugin install torch-air@torch-air
+   ```
+
+   Claude Code then prompts for an install scope: **user** (all projects),
+   **project** (shared via `.claude/settings.json`), or **local** (this repo only).
+
+Alternatively, run `/plugin` to open the interactive plugin manager and install
+`torch-air` from the **Discover** tab.
+
+### Install via settings.json
+
+For team or project setups, declare the marketplace and plugin in
+`.claude/settings.json` instead of running the commands:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "torch-air": {
+      "source": { "source": "github", "repo": "TorchedHat/torch-air" }
+    }
+  },
+  "enabledPlugins": {
+    "torch-air@torch-air": true
+  }
+}
+```
+
 ## Usage
 
+Once installed, invoke the skill (namespaced by the plugin):
+
 ```
-/torch-accelerator-readiness <backend>
+/torch-air:torch-accelerator-readiness <backend>
 ```
 
 Examples:
 
 ```
-/torch-accelerator-readiness <accelerator-name>
-/torch-accelerator-readiness /path/to/backend/source
-/torch-accelerator-readiness https://github.com/org/torch-backend
+/torch-air:torch-accelerator-readiness <accelerator-name>
+/torch-air:torch-accelerator-readiness /path/to/backend/source
+/torch-air:torch-accelerator-readiness https://github.com/org/torch-backend
 ```
 
 ## Report Structure
