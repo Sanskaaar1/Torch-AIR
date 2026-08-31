@@ -25,16 +25,20 @@ If invoked with nothing, don't guess — ask:
 ```
 gh pr view <pr> --json number,title,body,author,headRefName,baseRefName,files,additions,deletions,reviews
 gh pr diff <pr>
-base_repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+base_repo=$(gh pr view <pr> --json url -q .url | sed -E 's#https://github.com/([^/]+/[^/]+)/pull/.*#\1#')
 git fetch https://github.com/$base_repo.git pull/<number>/head:pr-<number>-head
 ```
 
-Fetch by explicit HTTPS URL against the repo `gh` resolves as current, not a
-local remote named `origin`/`upstream` — in a clone where `origin` points at
-a personal fork rather than the PR's actual base repo,
-`git fetch origin pull/<n>/head` fetches the wrong repo's refs (or fails)
-even though the PR exists. The URL form works regardless of what local
-remotes are named or where they point.
+Fetch by explicit HTTPS URL parsed from `gh pr view <pr>`'s own `url` field —
+never from a separate `gh repo view` call, and never from a local remote
+named `origin`/`upstream`. `gh repo view` resolves whatever repo is
+"current" for the local clone's remote config, independent of which PR was
+asked for; in a clone with `origin` pointing at a personal fork and
+`upstream` pointing at the canonical repo, it can resolve to a *different*
+repo than the one the PR argument actually points at, silently fetching an
+unrelated PR with the same number from the wrong repo. Deriving `base_repo`
+from the PR's own resolved `url` instead ties the fetch to the exact repo
+`gh pr view` already used for metadata, so it can't diverge.
 
 This fetch matters even for a dry run: most PRs come from forks, so the
 changed files won't exist on disk without it, and it's what inline-comment
@@ -70,7 +74,8 @@ mechanism would swap.
 ## Applicability
 
 Compare the changed-files list against `SKILL.md`, `skills/**`,
-`frameworks/**`. If none match, say so and stop — don't produce a review.
+`frameworks/**`, `.claude/skills/**`. If none match, say so and stop — don't
+produce a review.
 
 ## Review Philosophy
 
@@ -117,7 +122,14 @@ make the PR `mixed`):
 3. Else, diff touches only `README.md`/prose → `docs-only`. Only the
    General Conventions category applies (specifically README/structure
    sync); skip straight to Step 6.
-4. Else → `mixed` — genuinely orthogonal changes bundled together, not the
+4. Else, diff is scoped to `.claude/skills/torch-architecture-review/**`
+   (the review skill's own files) with no changes to `skills/`,
+   `frameworks/`, or root `SKILL.md` → `review-tooling-change`. Skill
+   Structure, Framework Nesting, Scoring Consistency, and Dispatch &
+   Orchestration are all N/A — they govern the accelerator-evaluation
+   surface this skill reviews, not its own structure. Only General
+   Conventions applies; skip straight to Step 6.
+5. Else → `mixed` — genuinely orthogonal changes bundled together, not the
    routine dispatch-table edit a new framework/dimension is expected to
    include.
 
