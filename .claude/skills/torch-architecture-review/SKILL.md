@@ -274,6 +274,14 @@ If the API rejects an inline comment (e.g. the line isn't part of the
 diff), retry the review without that comment and fold its content into the
 body — one bad anchor must never block the whole review from posting.
 
+If the API rejects the whole review with "Can not request changes on your
+own pull request" (422), the authenticated `gh` user is the PR's author —
+GitHub only permits `COMMENT` from a PR's own author, never
+`REQUEST_CHANGES`/`APPROVE`. Retry with `event: COMMENT`, keep the
+Recommendation text ("Request Changes" / "Approve" / "Needs Discussion")
+in the body unchanged so the verdict is still clear, and note in the body
+that it was posted as `COMMENT` for this reason.
+
 **Avoid duplicate reviews on re-invocation:** check `reviews` from Step 1
 for a prior review from this agent. If the new findings are identical to
 the last posted review, skip posting and tell the user nothing changed.
