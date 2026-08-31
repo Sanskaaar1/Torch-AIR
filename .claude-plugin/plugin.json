@@ -1,5 +1,5 @@
 {
   "name": "torch-air",
-  "description": "Torch Accelerator Integration Readiness — evaluate how well a hardware accelerator integrates with PyTorch",
+  "description": "Torch Accelerator Integration Readiness — evaluate PyTorch integration and security readiness for hardware accelerators",
   "skills": "./skills/"
 }
