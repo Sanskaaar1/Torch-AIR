@@ -1,14 +1,14 @@
 ---
 name: torch-architecture-review
-description: Review a torch-air pull request for architectural alignment against checklist.md. Use when asked to review, audit, or validate a torch-air PR (by number, URL, or branch) that adds or changes a skill, framework, or evaluation dimension under SKILL.md, skills/, or frameworks/. Produces a problems-only review and, optionally, posts it to the PR as a GitHub review.
+description: Review a torch-air pull request for architectural alignment against checklist.md. Use when asked to review, audit, or validate a torch-air PR (by number, URL, or branch) that adds or changes a skill, framework, or evaluation dimension under SKILL.md, skills/, frameworks/, or .claude/skills/. Produces a problems-only review and, optionally, posts it to the PR as a GitHub review.
 ---
 
 # Torch Architecture Review
 
-Review torch-air PRs that touch `SKILL.md`, `skills/`, or `frameworks/` for
-architectural alignment with torch-air's conventions — not accelerator
-backends themselves (that's `torch-accelerator-readiness`; don't confuse the
-two).
+Review torch-air PRs that touch `SKILL.md`, `skills/`, `frameworks/`, or
+`.claude/skills/` for architectural alignment with torch-air's conventions —
+not accelerator backends themselves (that's `torch-accelerator-readiness`;
+don't confuse the two).
 
 ## Usage Modes
 

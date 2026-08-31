@@ -1,9 +1,9 @@
 # Torch-AIR Architecture Review Checklist
 
 Reference checklist for reviewing torch-air PRs that touch `SKILL.md`,
-`skills/`, or `frameworks/` — used by the `torch-architecture-review` skill
-and by human reviewers. Skip items with nothing in the diff to check them
-against.
+`skills/`, `frameworks/`, or `.claude/skills/` — used by the
+`torch-architecture-review` skill and by human reviewers. Skip items with
+nothing in the diff to check them against.
 
 **This file is reference material, not a fillable template.** The reviewer
 (human or agent) reads it, checks the diff against each item, and writes up

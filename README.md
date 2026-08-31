@@ -192,7 +192,8 @@ torch-air-report/torch_readiness_report_<backend>.md
 
 ## Architecture Review
 
-Assessment PRs that touch `SKILL.md`, `skills/`, or `frameworks/` should be
+Assessment PRs that touch `SKILL.md`, `skills/`, `frameworks/`, or
+`.claude/skills/` should be
 reviewed against `.claude/skills/torch-architecture-review/checklist.md`
 before merge. It's a reference checklist (skill structure, framework
 nesting, scoring consistency, dispatch logic) — not a form to fill in.
