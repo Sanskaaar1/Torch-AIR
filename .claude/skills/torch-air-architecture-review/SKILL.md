@@ -61,15 +61,20 @@ Use the branch name in place of a PR number throughout; there's no `gh pr`
 context (title/body/author), so build the Summary from commit messages and
 the diff instead.
 
-### GitHub Actions Mode (not yet wired up)
+### GitHub Actions Mode
 
-This skill currently only runs manually. When a GitHub Actions wrapper is
-added (tracked in issue #17's "Future Enhancements"), it should pre-fetch PR
-metadata and inject it into the prompt the way PyTorch's own `pr-review`
-skill does, and this skill should detect that mode (e.g. by the presence of
-pre-injected PR context) instead of shelling out to `gh`. Nothing below
-needs to change for that to work — only Step 1's context-gathering
-mechanism would swap.
+The `.github/workflows/claude.yml` workflow invokes Claude from a new PR
+conversation comment beginning with `@claude`. The text after that mention is
+the maintainer's prompt; it is not a fixed command. When that prompt requests
+an architecture review, GitHub has already supplied the PR metadata, changed
+files, diff, and comment context to Claude.
+
+In this mode, use that supplied context and read only repository files needed
+to verify findings. Do **not** run `gh` or `git`, fetch or check out the PR
+head, write `torch-air-report/` output, or use the manual `--post` procedure.
+Return the rendered architecture review in Claude's one PR response comment.
+The workflow is intentionally read-only: it cannot edit, commit, push,
+approve, or submit a formal GitHub review.
 
 ## Applicability
 
@@ -103,7 +108,8 @@ produce a review.
 
 ### Step 1: Gather context
 
-Use the commands from the relevant Usage Mode above.
+Use the commands from the relevant Usage Mode above. In GitHub Actions Mode,
+use the injected PR context described above instead.
 
 ### Step 2: Classify
 
@@ -231,7 +237,9 @@ skill." One finding, one bullet, no repetition across categories.
 ## Posting to the PR (`--post`)
 
 Without `--post`, the output above is the full deliverable — nothing is
-sent to GitHub.
+sent to GitHub. GitHub Actions Mode is an exception: the Action publishes the
+rendered response as its single regular PR comment, not through this posting
+procedure.
 
 With `--post`, still show the rendered review and get explicit user
 confirmation before calling GitHub — a posted review is visible to others
@@ -291,6 +299,9 @@ the last posted review, skip posting and tell the user nothing changed.
 - `torch-air-report/architecture_review_pr<number>.md` (or
   `..._<branch-name>.md` for branch mode) — the rendered review, git-ignored
 - Printed summary to the user
+
+In GitHub Actions Mode, do not create a local output file; the response
+comment is the only artifact.
 
 ## Important Notes
 
