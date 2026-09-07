@@ -92,6 +92,10 @@ frameworks/pytorch/
 - [ ] **Checklist items have a matching `EVAL.md` phase** — an item with
   nothing telling the evaluator to check it will never get filled with real
   evidence
+- [ ] **No duplicate/overlapping items across sections** — a new
+  checklist's items shouldn't restate ground already covered by another
+  section (e.g. a security section re-checking something the framework's
+  own checklist already scores) — merge or cross-reference instead
 
 ## Scoring Consistency
 
@@ -172,6 +176,25 @@ Overall %:      sum(section_pct * weight_r) / sum(weight_r) * 100
 - [ ] **Evidence is concrete, not asserted** — filled rows in any scored
   checklist cite a file path + line, a command's output, or a URL — never a
   bare claim like "supported"
+- [ ] **Reports record generation metadata** — torch-air version, framework
+  version (e.g. PyTorch version), and the model used to generate the report
+  are captured, so a report is reproducible and its provenance is clear
+- [ ] **No collateral removal of existing documentation** — an edit to
+  README/SKILL.md/checklist prose doesn't silently drop an existing,
+  still-accurate line (e.g. a scoring rule, a caveat) as a side effect of
+  editing nearby text; removals need to be deliberate and called out
+- [ ] **Backwards-compatible report semantics for existing consumers** — a
+  report format already consumed by external vendors or downstream tooling
+  keeps its existing meaning; a new dimension or feature doesn't repurpose
+  or redefine what an existing report already means
+- [ ] **Extension scaffolding in `SKILL.md` stays intact** — instructions
+  that document how to add a new framework or dimension aren't removed or
+  trimmed as part of an unrelated edit; they're what makes the pattern
+  self-documenting for the next contributor
+- [ ] **No unrelated changes to plugin manifests** — edits to
+  `.claude-plugin/marketplace.json` or `.claude-plugin/plugin.json` are
+  flagged unless the PR's actual change requires them (e.g. a new plugin
+  entry, a changed skills path)
 
 ---
 
