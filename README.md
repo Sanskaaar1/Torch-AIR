@@ -193,11 +193,11 @@ torch-air-report/torch_readiness_report_<backend>.md
 ## Architecture Review
 
 Maintainers can ask the GPT PR Assistant to review an assessment PR against
-this repository's conventions by adding a `review-agent` conversation comment.
-The text after `review-agent` is the prompt, for example:
+this repository's conventions by adding an `@review-agent` conversation comment.
+The text after `@review-agent` is the prompt, for example:
 
 ```
-review-agent review this PR for architecture alignment and general issues
+@review-agent review this PR for architecture alignment and general issues
 ```
 
 The assistant is read-only: it returns one regular PR comment and cannot

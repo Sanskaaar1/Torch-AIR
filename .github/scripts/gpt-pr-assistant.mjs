@@ -29,7 +29,7 @@ async function github(path, options = {}) {
 }
 
 function promptAfterCommand(body) {
-  const match = body.match(/(?:^|\n)[\t ]*review-agent(?:[\t ]+([\s\S]*))?$/i);
+  const match = body.match(/(?:^|\n)[\t ]*@review-agent(?:[\t ]+([\s\S]*))?$/i);
   return match ? match[1]?.trim() || 'Review this pull request.' : null;
 }
 
@@ -53,6 +53,11 @@ const prNumber = event.issue.number;
 const maintainerPrompt = promptAfterCommand(event.comment.body);
 if (maintainerPrompt === null) process.exit(0);
 const [owner, repo] = repository.split('/');
+await github(`/repos/${owner}/${repo}/issues/comments/${event.comment.id}/reactions`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ content: 'eyes' }),
+});
 const [pr, filesResponse, diffResponse, guide, checklist] = await Promise.all([
   github(`/repos/${owner}/${repo}/pulls/${prNumber}`).then((response) => response.json()),
   github(`/repos/${owner}/${repo}/pulls/${prNumber}/files?per_page=100`).then((response) => response.json()),
