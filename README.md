@@ -192,9 +192,19 @@ torch-air-report/torch_readiness_report_<backend>.md
 
 ## Architecture Review
 
-Contributor tooling for reviewing assessment PRs against this repo's own
-conventions lives in
-[`.claude/skills/torch-air-architecture-review/README.md`](.claude/skills/torch-air-architecture-review/README.md).
+Maintainers can ask the GPT PR Assistant to review an assessment PR against
+this repository's conventions by adding an `@gpt` conversation comment. The
+text after `@gpt` is the prompt, for example:
+
+```
+@gpt review this PR for architecture alignment and general issues
+```
+
+The assistant is read-only: it returns one regular PR comment and cannot
+commit, push, approve, request changes, or submit a formal review. Its
+architecture-review instructions and checklist live in `.github/prompts/`.
+Repository administrators must configure the `OPENAI_API_KEY` Actions secret
+before enabling the workflow.
 
 ## Repository Structure
 
@@ -204,12 +214,14 @@ torch-air/
 ├── skills/
 │   └── torch-accelerator-readiness/
 │       └── SKILL.md                  # Symlink to ../../SKILL.md (plugin discovery)
-├── .claude/
-│   └── skills/
-│       └── torch-air-architecture-review/
-│           ├── SKILL.md              # Reviews torch-air PRs against checklist.md
-│           ├── checklist.md          # Architecture review checklist for assessment PRs
-│           └── README.md             # Usage docs for the architecture review skill
+├── .github/
+│   ├── prompts/
+│   │   ├── gpt-pr-assistant.md       # GPT review behavior and output format
+│   │   └── architecture-review-checklist.md
+│   ├── scripts/
+│   │   └── gpt-pr-assistant.mjs      # GitHub/Responses API integration
+│   └── workflows/
+│       └── gpt-pr-assistant.yml      # Maintainer-invoked PR workflow
 ├── frameworks/
 │   └── pytorch/
 │       ├── EVAL.md                   # PyTorch evaluation phases and probing instructions
