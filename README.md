@@ -190,20 +190,49 @@ Reports are written to `torch-air-report/`:
 torch-air-report/torch_readiness_report_<backend>.md
 ```
 
+## Architecture Review
+
+Maintainers can ask the GPT PR Assistant to review an assessment PR against
+this repository's conventions by adding an `@gpt` conversation comment. The
+text after `@gpt` is the prompt, for example:
+
+```
+@gpt review this PR for architecture alignment and general issues
+```
+
+The assistant is read-only: it returns one regular PR comment and cannot
+commit, push, approve, request changes, or submit a formal review. Its
+architecture-review instructions and checklist live in `.github/prompts/`.
+Repository administrators must configure the `OPENAI_API_KEY` Actions secret
+before enabling the workflow.
+
 ## Repository Structure
 
 ```
 torch-air/
 ├── SKILL.md                          # Orchestrator: input parsing, dispatch, scoring, summary
+├── skills/
+│   └── torch-accelerator-readiness/
+│       └── SKILL.md                  # Symlink to ../../SKILL.md (plugin discovery)
+├── .github/
+│   ├── prompts/
+│   │   ├── gpt-pr-assistant.md       # GPT review behavior and output format
+│   │   └── architecture-review-checklist.md
+│   ├── scripts/
+│   │   └── gpt-pr-assistant.mjs      # GitHub/Responses API integration
+│   └── workflows/
+│       └── gpt-pr-assistant.yml      # Maintainer-invoked PR workflow
 ├── frameworks/
-│   ├── pytorch/
-│   │   ├── EVAL.md                   # PyTorch evaluation phases and probing instructions
-│   │   ├── checklist.md              # PyTorch readiness checklist template (open-source)
-│   │   ├── checklist_private.md      # Scored checklist for closed-source backends
-│   │   └── research_template_private.md  # Narrative research template for private backends
+│   └── pytorch/
+│       ├── EVAL.md                   # PyTorch evaluation phases and probing instructions
+│       ├── checklist.md              # PyTorch readiness checklist template (open-source)
+│       ├── checklist_private.md      # Scored checklist for closed-source backends
+│       └── research_template_private.md  # Narrative research template for private backends
 ├── crcr/
 │   └── crcr-l1-onboarding.md        # CRCR Level 1 onboarding guide
 └── README.md
 ```
 
 Adding a new framework: create `frameworks/<name>/` with `EVAL.md` (probing instructions) and `checklist.md` (fillable template), then add the framework to the dispatch table in `SKILL.md`.
+
+Adding a new evaluation dimension (e.g. security): nest under the parent framework at `frameworks/<framework>/<dimension>/`, extend the existing skill with flags (`--security`, `--all`), and do **not** add the dimension to the Framework Dispatch table.

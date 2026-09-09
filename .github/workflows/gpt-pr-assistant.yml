@@ -1,0 +1,35 @@
+name: GPT PR Assistant
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  gpt:
+    # Run only for PR conversation comments from trusted repository members.
+    # issue_comment workflows run from the trusted default branch.
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@gpt') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # This checks out repository guidance from the default branch only; it
+      # never checks out or executes untrusted PR-head code.
+      - name: Check out trusted review runner
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Review or answer the maintainer prompt
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: node .github/scripts/gpt-pr-assistant.mjs
