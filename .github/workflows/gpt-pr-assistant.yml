@@ -15,7 +15,7 @@ jobs:
     # issue_comment workflows run from the trusted default branch.
     if: >-
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, '@gpt') &&
+      contains(github.event.comment.body, 'review-agent') &&
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -25,9 +25,9 @@ async function github(path, options = {}) {
   return response;
 }
 
-function promptAfterMention(body) {
-  const match = body.match(/@gpt\b\s*([\s\S]*)/i);
-  return match?.[1].trim() || 'Review this pull request.';
+function promptAfterCommand(body) {
+  const match = body.match(/(?:^|\n)[\t ]*review-agent(?:[\t ]+([\s\S]*))?$/i);
+  return match ? match[1]?.trim() || 'Review this pull request.' : null;
 }
 
 function responseText(response) {
@@ -47,7 +47,8 @@ if (!event.issue?.pull_request || !trustedAssociations.has(event.comment?.author
 
 const repository = required('GITHUB_REPOSITORY');
 const prNumber = event.issue.number;
-const maintainerPrompt = promptAfterMention(event.comment.body);
+const maintainerPrompt = promptAfterCommand(event.comment.body);
+if (maintainerPrompt === null) process.exit(0);
 const [owner, repo] = repository.split('/');
 const [pr, filesResponse, diffResponse, guide, checklist] = await Promise.all([
   github(`/repos/${owner}/${repo}/pulls/${prNumber}`).then((response) => response.json()),
