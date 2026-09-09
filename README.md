@@ -204,7 +204,9 @@ The assistant is read-only: it returns one regular PR comment and cannot
 commit, push, approve, request changes, or submit a formal review. Its
 architecture-review instructions and checklist live in `.github/prompts/`.
 Repository administrators must configure the `OPENAI_API_KEY` Actions secret
-before enabling the workflow.
+and set **Settings → Actions → General → Workflow permissions** to **Read and
+write permissions** before enabling the workflow. The latter is required for
+the assistant to post its regular PR comment.
 
 ## Repository Structure
 

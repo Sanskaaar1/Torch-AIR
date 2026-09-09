@@ -21,7 +21,10 @@ async function github(path, options = {}) {
       ...options.headers,
     },
   });
-  if (!response.ok) throw new Error(`GitHub API ${response.status} for ${path}`);
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`GitHub API ${response.status} for ${path}: ${detail}`);
+  }
   return response;
 }
 
@@ -88,7 +91,7 @@ const openaiResponse = await fetch(openaiUrl, {
     'Content-Type': 'application/json',
   },
   body: JSON.stringify({
-    model: 'gpt-5.5',
+    model: 'gpt-5.6-terra',
     instructions,
     input,
     reasoning: { effort: 'medium' },
