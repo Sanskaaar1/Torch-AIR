@@ -20,16 +20,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # This checks out repository guidance from the default branch only; it
-      # never checks out or executes untrusted PR-head code.
+      # Keep the runner on the trusted default branch. PR-head content is
+      # checked out separately for inspection only and is never executed.
       - name: Check out trusted review runner
         uses: actions/checkout@v5
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 1
           persist-credentials: false
+          path: review-runner
+      - name: Check out pull request head
+        uses: actions/checkout@v5
+        with:
+          ref: refs/pull/${{ github.event.issue.number }}/head
+          fetch-depth: 1
+          persist-credentials: false
+          path: pr-head
       - name: Review or answer the maintainer prompt
         env:
           GITHUB_TOKEN: ${{ github.token }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PR_HEAD_PATH: ${{ github.workspace }}/pr-head
+        working-directory: review-runner
         run: node .github/scripts/gpt-pr-assistant.mjs

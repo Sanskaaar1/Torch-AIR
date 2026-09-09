@@ -200,6 +200,9 @@ The text after `@review-agent` is the prompt, for example:
 @review-agent review this PR for architecture alignment and general issues
 ```
 
+The assistant skips an unchanged PR head that it has already reviewed. Add
+`--force` to request another review of the same commit.
+
 The assistant is read-only: it returns one regular PR comment and cannot
 commit, push, approve, request changes, or submit a formal review. Its
 architecture-review instructions and checklist live in `.github/prompts/`.
