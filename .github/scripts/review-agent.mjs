@@ -6,10 +6,16 @@ import { pathToFileURL } from 'node:url';
 
 const TRUSTED = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 const HISTORY_MAX_ITEMS = 30;
-const HISTORY_MAX_CHARS = 24_000;
+const HISTORY_MAX_CHARS = 8_000;
 const DIFF_MAX_CHARS = 120_000;
 const COMMAND_MAX_CHARS = 2_000;
 const OUTPUT_MAX_CHARS = 20_000;
+// Responses has no input-token limit parameter. 64k characters was calibrated
+// from the failed run (90,815 chars = 23,034 tokens) to target ~16k input
+// tokens while retaining the highest-priority review context.
+const INPUT_MAX_CHARS = 64_000;
+const INITIAL_MAX_OUTPUT_TOKENS = 4_096;
+const RETRY_MAX_OUTPUT_TOKENS = 6_144;
 const FORCE_COOLDOWN_MS = 15 * 60 * 1_000;
 const FORCE_MAX_PER_HEAD = 2;
 const BLOCKED_LABELS = new Set(['security', 'private', 'do-not-ai-review']);
@@ -97,6 +103,34 @@ export function buildReviewableDiff(files = []) {
     .flatMap((file) => typeof file.patch === 'string' && file.patch.trim()
       ? [`diff --git a/${file.filename} b/${file.filename}\n${file.patch}`] : [])
     .join('\n'), DIFF_MAX_CHARS);
+}
+
+export function buildReviewInput({ commandPrompt, pr, headSha, files, diff, history, checklist, architectureApplies }) {
+  let input = '';
+  let truncated = false;
+  const append = (tag, value) => {
+    const opening = `<${tag}>\n`;
+    const closing = `\n</${tag}>`;
+    const remaining = INPUT_MAX_CHARS - input.length - opening.length - closing.length;
+    if (remaining <= 0) { truncated = true; return; }
+    const text = String(value ?? '');
+    const clipped = text.length <= remaining ? text : `${text.slice(0, Math.max(0, remaining - 12))}\n[truncated]`;
+    if (clipped.length < text.length) truncated = true;
+    input += `${opening}${clipped}${closing}\n\n`;
+  };
+  append('untrusted_command', truncate(commandPrompt, COMMAND_MAX_CHARS) || '(No additional prompt.)');
+  append('untrusted_pr_metadata', JSON.stringify({ number: pr.number, title: pr.title, body: truncate(pr.body, 8_000), head_sha: headSha }));
+  append('untrusted_changed_files', files.map((file) => `${file.filename} (+${file.additions}/-${file.deletions})`).join('\n'));
+  if (architectureApplies) append('trusted_architecture_checklist', checklist);
+  // History is supplemental but precedes the diff so prior unresolved findings
+  // remain available when a large diff must be clipped.
+  append('untrusted_review_history', formatHistory(history));
+  append('untrusted_pr_diff', diff);
+  return { input: input.trim(), truncated };
+}
+
+export function shouldRetryForOutputLimit(response) {
+  return response?.status === 'incomplete' && response?.incomplete_details?.reason === 'max_output_tokens';
 }
 
 export function parseStructuredReview(value) {
@@ -290,20 +324,28 @@ async function main() {
     ]);
     if (!process.env.OPENAI_API_KEY) throw new Error('The OpenAI API key is not configured.');
     const architectureApplies = files.some((file) => /(^|\/)(SKILL\.md|skills\/|frameworks\/|\.github\/prompts\/)/.test(file.filename));
-    const rawInput = `<untrusted_command>\n${truncate(command.prompt, COMMAND_MAX_CHARS) || '(No additional prompt.)'}\n</untrusted_command>\n\n<untrusted_pr_metadata>\n${JSON.stringify({ number: pr.number, title: pr.title, body: truncate(pr.body, 8_000), head_sha: headSha })}\n</untrusted_pr_metadata>\n\n<untrusted_changed_files>\n${files.map((file) => `${file.filename} (+${file.additions}/-${file.deletions})`).join('\n')}\n</untrusted_changed_files>\n\n<untrusted_pr_diff>\n${diff}\n</untrusted_pr_diff>\n\n<untrusted_review_history>\n${formatHistory(history.included)}\n</untrusted_review_history>${architectureApplies ? `\n\n<trusted_architecture_checklist>\n${checklist}\n</trusted_architecture_checklist>` : ''}`;
-    const { text: input, count: redactions } = redactSensitiveText(rawInput);
-    log('review_input', { pr_number: prNumber, input_characters: input.length, redactions });
+    const reviewInput = buildReviewInput({ commandPrompt: command.prompt, pr, headSha, files, diff, history: history.included, checklist, architectureApplies });
+    const { text: input, count: redactions } = redactSensitiveText(reviewInput.input);
+    log('review_input', { pr_number: prNumber, input_characters: input.length, input_budget_characters: INPUT_MAX_CHARS, truncated: reviewInput.truncated, redactions });
     const started = Date.now();
-    const response = await fetch('https://api.openai.com/v1/responses', { method: 'POST', signal: AbortSignal.timeout(60_000), headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'gpt-5.6-terra', reasoning: { effort: 'medium' }, text: { verbosity: 'medium', format: { type: 'json_schema', name: 'pr_review', strict: true, schema: REVIEW_SCHEMA } }, max_output_tokens: 1_200, store: false, instructions, input }) });
-    const latencyMs = Date.now() - started;
+    const requestReview = (maxOutputTokens) => fetch('https://api.openai.com/v1/responses', { method: 'POST', signal: AbortSignal.timeout(60_000), headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'gpt-5.6-terra', text: { verbosity: 'medium', format: { type: 'json_schema', name: 'pr_review', strict: true, schema: REVIEW_SCHEMA } }, max_output_tokens: maxOutputTokens, store: false, instructions, input }) });
+    let response = await requestReview(INITIAL_MAX_OUTPUT_TOKENS);
     if (!response.ok) throw new Error(`OpenAI request failed (${response.status}).`);
-    const result = await response.json();
+    let result = await response.json();
+    if (shouldRetryForOutputLimit(result)) {
+      log('openai_retry', { pr_number: prNumber, reason: result.incomplete_details.reason, max_output_tokens: RETRY_MAX_OUTPUT_TOKENS });
+      response = await requestReview(RETRY_MAX_OUTPUT_TOKENS);
+      if (!response.ok) throw new Error(`OpenAI request failed (${response.status}).`);
+      result = await response.json();
+    }
+    const latencyMs = Date.now() - started;
     const extracted = extractResponseText(result);
     log('openai_response', {
       latency_ms: latencyMs,
       status: result.status ?? null,
       output_items: Array.isArray(result.output) ? result.output.length : 0,
       extracted_text_characters: extracted.length,
+      incomplete_details: result.incomplete_details ?? null,
       usage: result.usage ?? null,
     });
     if (!isCompletedResponse(result)) throw new Error('OpenAI response did not complete.');

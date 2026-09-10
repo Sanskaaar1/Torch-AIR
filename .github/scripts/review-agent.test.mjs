@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildReviewableDiff, extractResponseText, formatDeduplicationComment, formatStructuredReview, isAllowedGithubApiUrl, isCompletedResponse, isSuccessfulReviewResult, parseReviewCommand, parseStructuredReview, redactSensitiveText, sanitizeReviewOutput, selectReviewHistory } from './review-agent.mjs';
+import { buildReviewInput, buildReviewableDiff, extractResponseText, formatDeduplicationComment, formatStructuredReview, isAllowedGithubApiUrl, isCompletedResponse, isSuccessfulReviewResult, parseReviewCommand, parseStructuredReview, redactSensitiveText, sanitizeReviewOutput, selectReviewHistory, shouldRetryForOutputLimit } from './review-agent.mjs';
 
 const rawRestSuccess = {
   status: 'completed',
@@ -77,6 +77,26 @@ test('keeps reviewable source patches and excludes lockfiles, generated files, a
   ]);
   assert.match(diff, /src\/app\.js/);
   assert.doesNotMatch(diff, /package-lock|dist\/bundle|logo\.svg/);
+});
+
+test('bounds review input while retaining the architecture checklist and review history ahead of a large diff', () => {
+  const result = buildReviewInput({
+    commandPrompt: 'check this', pr: { number: 7, title: 'Title', body: '' }, headSha: 'abc',
+    files: [{ filename: 'src/app.js', additions: 1, deletions: 1 }], diff: 'd'.repeat(100_000),
+    history: [{ kind: 'inline', botFinding: false, trusted: true, createdAt: '', author: 'owner', path: 'src/app.js', line: 1, body: 'prior finding' }],
+    checklist: 'architecture requirement', architectureApplies: true,
+  });
+  assert.ok(result.input.length <= 64_000);
+  assert.match(result.input, /architecture requirement/);
+  assert.match(result.input, /prior finding/);
+  assert.match(result.input, /\[truncated\]/);
+  assert.equal(result.truncated, true);
+});
+
+test('retries only responses that exhausted their output-token limit', () => {
+  assert.equal(shouldRetryForOutputLimit({ status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } }), true);
+  assert.equal(shouldRetryForOutputLimit({ status: 'incomplete', incomplete_details: { reason: 'content_filter' } }), false);
+  assert.equal(shouldRetryForOutputLimit({ status: 'completed' }), false);
 });
 
 test('validates and formats the structured review response before posting', () => {
