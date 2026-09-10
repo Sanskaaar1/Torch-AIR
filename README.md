@@ -196,6 +196,40 @@ Contributor tooling for reviewing assessment PRs against this repo's own
 conventions lives in
 [`.claude/skills/torch-air-architecture-review/README.md`](.claude/skills/torch-air-architecture-review/README.md).
 
+### Review Agent
+
+Maintainers can request a read-only review from a pull-request conversation
+comment:
+
+```
+@review-agent review error handling and follow up on prior feedback
+```
+
+The command must be the first non-whitespace content on a comment line. Add
+`--force` to request another review of the same PR head when a successful
+review-agent result already exists:
+
+```
+@review-agent --force re-check the latest changes
+```
+
+The GitHub Actions workflow accepts only `OWNER`, `MEMBER`, and
+`COLLABORATOR` comments on pull requests. It checks out the trusted default
+branch and the PR head only to read them; it never runs PR code, workflows,
+package hooks, tests, commits, pushes, merges, approvals, or formal
+request-changes reviews.
+
+Every invocation retrieves its review memory fresh from the current PR in
+GitHub: metadata, files/diff, review and conversation comments, and trusted
+maintainer feedback. This compact, bounded history helps follow-up reviews
+avoid repeating resolved findings. No database, embeddings service, vector
+store, or persistent external memory is used.
+
+Repository administrators must configure the `OPENAI_API_KEY` Actions secret.
+The workflow requires only `contents: read`, `issues: write`, and
+`pull-requests: write`; the write scopes are used for the acknowledgement
+reaction and normal PR conversation comments.
+
 ## Repository Structure
 
 ```
@@ -208,8 +242,16 @@ torch-air/
 │   └── skills/
 │       └── torch-air-architecture-review/
 │           ├── SKILL.md              # Reviews torch-air PRs against checklist.md
-│           ├── checklist.md          # Architecture review checklist for assessment PRs
+│           ├── checklist.md          # Canonical architecture review checklist
 │           └── README.md             # Usage docs for the architecture review skill
+├── .github/
+│   ├── prompts/
+│   │   ├── review-agent.md           # Review Agent behavior and output format
+│   │   └── architecture-review-checklist.md # Symlink to the canonical checklist
+│   ├── scripts/
+│   │   └── review-agent.mjs          # GitHub/Responses API integration
+│   └── workflows/
+│       └── review-agent.yml          # Maintainer-invoked PR workflow
 ├── frameworks/
 │   └── pytorch/
 │       ├── EVAL.md                   # PyTorch evaluation phases and probing instructions
