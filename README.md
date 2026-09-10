@@ -192,9 +192,24 @@ torch-air-report/torch_readiness_report_<backend>.md
 
 ## Architecture Review
 
-Contributor tooling for reviewing assessment PRs against this repo's own
-conventions lives in
-[`.claude/skills/torch-air-architecture-review/README.md`](.claude/skills/torch-air-architecture-review/README.md).
+Maintainers can ask the GPT PR Assistant to review an assessment PR against
+this repository's conventions by adding an `@review-agent` conversation comment.
+The text after `@review-agent` is the prompt, for example:
+
+```
+@review-agent review this PR for architecture alignment and general issues
+```
+
+The assistant skips an unchanged PR head that it has already reviewed. Add
+`--force` to request another review of the same commit.
+
+The assistant is read-only: it returns one regular PR comment and cannot
+commit, push, approve, request changes, or submit a formal review. Its
+architecture-review instructions and checklist live in `.github/prompts/`.
+Repository administrators must configure the `OPENAI_API_KEY` Actions secret
+and set **Settings → Actions → General → Workflow permissions** to **Read and
+write permissions** before enabling the workflow. The latter is required for
+the assistant to post its regular PR comment.
 
 ### PR review assistant
 
@@ -237,12 +252,14 @@ torch-air/
 ├── skills/
 │   └── torch-accelerator-readiness/
 │       └── SKILL.md                  # Symlink to ../../SKILL.md (plugin discovery)
-├── .claude/
-│   └── skills/
-│       └── torch-air-architecture-review/
-│           ├── SKILL.md              # Reviews torch-air PRs against checklist.md
-│           ├── checklist.md          # Architecture review checklist for assessment PRs
-│           └── README.md             # Usage docs for the architecture review skill
+├── .github/
+│   ├── prompts/
+│   │   ├── gpt-pr-assistant.md       # GPT review behavior and output format
+│   │   └── architecture-review-checklist.md
+│   ├── scripts/
+│   │   └── gpt-pr-assistant.mjs      # GitHub/Responses API integration
+│   └── workflows/
+│       └── gpt-pr-assistant.yml      # Maintainer-invoked PR workflow
 ├── frameworks/
 │   └── pytorch/
 │       ├── EVAL.md                   # PyTorch evaluation phases and probing instructions
