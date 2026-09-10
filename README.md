@@ -207,8 +207,8 @@ comment:
 
 The command must be the first non-whitespace content on a comment line. Only
 repository owners may add `--force` to request another review of the same PR
-head. Forced reviews have a 15-minute cooldown and a maximum of two attempts
-per PR head:
+head. Successful forced reviews have a 15-minute cooldown and a maximum of two
+successful runs per PR head. Failures and timeouts consume neither:
 
 ```
 @review-agent --force re-check the latest changes
@@ -224,15 +224,19 @@ Every invocation retrieves its review memory fresh from the current PR in
 GitHub: metadata, files/diff, review and conversation comments, and trusted
 maintainer feedback. This compact, bounded history helps follow-up reviews
 avoid repeating resolved findings. No database, embeddings service, vector
-store, or persistent external memory is used. Lockfiles, generated output,
-source maps, and media are excluded from the model diff; the remaining diff is
-hard-capped. The model must return schema-validated findings before a comment
-is posted.
+store, or persistent external memory is used. The complete textual GitHub diff,
+including lockfiles, vendor code, build logic, generated artifacts, and SVGs,
+is included up to a 120,000-character cap; binary-change metadata is retained.
+Inputs use fixed section budgets under a 192,000-character ceiling (about 48k
+tokens), so metadata and history cannot displace the diff. Reviews are posted
+as Markdown.
 
 Repository administrators must configure the `OPENAI_API_KEY` Actions secret.
-The workflow requires only `contents: read`, `pull-requests: read`, and
-`issues: write`; the write scope is used for the acknowledgement reaction and
-normal PR conversation comments. PRs labelled `security`, `private`, or
+The workflow requires only `contents: read`, `pull-requests: write`, and
+`issues: write`; the write scopes are used for the acknowledgement reaction and
+normal PR conversation comments. OpenAI requests allow 180 seconds and start
+with 4,096 output tokens, with one 6,144-token retry only when the first response
+reaches its output-token limit. PRs labelled `security`, `private`, or
 `do-not-ai-review` are not sent to OpenAI. Repository administrators should
 protect `main` and require designated review for workflow, prompt, and review
 agent script changes.

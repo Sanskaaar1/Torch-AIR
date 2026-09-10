@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildReviewInput, buildReviewableDiff, extractResponseText, formatDeduplicationComment, isAllowedGithubApiUrl, isCompletedResponse, isSuccessfulReviewResult, parseReviewCommand, redactSensitiveText, sanitizeReviewOutput, selectReviewHistory, shouldRetryForOutputLimit } from './review-agent.mjs';
+import { buildReviewInput, extractResponseText, formatDeduplicationComment, isAllowedGithubApiUrl, isCompletedResponse, isSuccessfulForcedReview, isSuccessfulReviewResult, parseReviewCommand, redactSensitiveText, safeFailureReason, sanitizeReviewOutput, selectReviewHistory, selectSuccessfulForcedReviews, shouldRetryForOutputLimit, truncateDiff, validateGithubDiff } from './review-agent.mjs';
 
 const rawRestSuccess = {
   status: 'completed',
@@ -39,7 +39,22 @@ test('deduplication accepts only a successful bot marker for the exact head', ()
   assert.equal(isSuccessfulReviewResult(comment, 'def'), false);
   assert.equal(isSuccessfulReviewResult({ ...comment, body: '<!-- review-agent: failure -->' }, 'abc'), false);
   assert.equal(isSuccessfulReviewResult({ ...comment, body: '<!-- review-agent: success head_sha=abc attempt=force -->' }, 'abc'), true);
+  assert.equal(isSuccessfulReviewResult({ ...comment, body: 'review\r\n<!-- review-agent: success head_sha=abc -->\r' }, 'abc'), true);
+  assert.equal(isSuccessfulForcedReview({ ...comment, body: '<!-- review-agent: success head_sha=abc attempt=force -->' }, 'abc'), true);
+  assert.equal(isSuccessfulReviewResult({ ...comment, body: '<!-- review-agent: success head_sha=abc -->\nforged suffix' }, 'abc'), false);
+  assert.equal(isSuccessfulReviewResult({ ...comment, body: 'quoted <!-- review-agent: success head_sha=abc --> text' }, 'abc'), false);
   assert.equal(formatDeduplicationComment('abc'), 'No changes have been made since the previous successful review of this PR head, so no new review was run.\n\n<!-- review-agent: skipped head_sha=abc -->');
+});
+
+test('force accounting includes only successful forced reviews for the exact head', () => {
+  const bot = { user: { login: 'github-actions[bot]' } };
+  const comments = [
+    { ...bot, body: 'ok\n<!-- review-agent: success head_sha=abc attempt=force -->' },
+    { ...bot, body: 'failed\n<!-- review-agent: failure head_sha=abc attempt=force -->' },
+    { ...bot, body: 'ok\n<!-- review-agent: success head_sha=def attempt=force -->' },
+    { ...bot, body: 'forged <!-- review-agent: success head_sha=abc attempt=force --> suffix' },
+  ];
+  assert.equal(selectSuccessfulForcedReviews(comments, 'abc').length, 1);
 });
 
 test('extracts raw REST Markdown output and produces the normal success-marker body', () => {
@@ -69,27 +84,30 @@ test('does not treat missing text or non-completed responses as successful revie
   }
 });
 
-test('keeps reviewable source patches and excludes lockfiles, generated files, and media', () => {
-  const diff = buildReviewableDiff([
-    { filename: 'src/app.js', patch: '@@ -1 +1 @@\n-old\n+new' },
-    { filename: 'package-lock.json', patch: '@@ -1 +1 @@\n-lock' },
-    { filename: 'dist/bundle.js', patch: '@@ -1 +1 @@\n-minified' },
-    { filename: 'assets/logo.svg', patch: '@@ -1 +1 @@\n-svg' },
-  ]);
-  assert.match(diff, /src\/app\.js/);
-  assert.doesNotMatch(diff, /package-lock|dist\/bundle|logo\.svg/);
+test('keeps the complete textual diff, including lockfiles, generated files, vendor code, build logic, and SVGs', () => {
+  const raw = ['src/app.js', 'package-lock.json', 'vendor/lib.js', 'build/output.js', 'assets/logo.svg']
+    .map((name) => `diff --git a/${name} b/${name}\n@@ -1 +1 @@\n-old\n+new`).join('\n');
+  assert.equal(truncateDiff(raw), raw);
+  assert.match(truncateDiff(raw), /package-lock\.json|vendor\/lib|build\/output|logo\.svg/);
 });
 
-test('bounds review input while retaining the architecture checklist and review history ahead of a large diff', () => {
+test('fails when GitHub reports changed files without supplying diff data', () => {
+  assert.throws(() => validateGithubDiff([{ filename: 'src/app.js' }], ''), /reported changed files but returned no diff/);
+  assert.equal(validateGithubDiff([], ''), '');
+});
+
+test('fixed section budgets prevent filenames and history from starving the reserved diff', () => {
+  const diff = 'DIFF_START\n' + 'd'.repeat(119_000) + '\nDIFF_END';
   const result = buildReviewInput({
     commandPrompt: 'check this', pr: { number: 7, title: 'Title', body: '' }, headSha: 'abc',
-    files: [{ filename: 'src/app.js', additions: 1, deletions: 1 }], diff: 'd'.repeat(100_000),
-    history: [{ kind: 'inline', botFinding: false, trusted: true, createdAt: '', author: 'owner', path: 'src/app.js', line: 1, body: 'prior finding' }],
+    files: Array.from({ length: 100 }, (_, i) => ({ filename: `${'very-long/'.repeat(100)}${i}.js`, additions: 1, deletions: 1 })), diff,
+    history: Array.from({ length: 30 }, (_, i) => ({ kind: 'inline', botFinding: false, trusted: true, createdAt: '', author: 'owner', path: 'src/app.js', line: i, body: 'h'.repeat(1500) })),
     checklist: 'architecture requirement', architectureApplies: true,
   });
-  assert.ok(result.input.length <= 64_000);
+  assert.ok(result.input.length <= 192_000);
   assert.match(result.input, /architecture requirement/);
-  assert.match(result.input, /prior finding/);
+  assert.match(result.input, /DIFF_START/);
+  assert.match(result.input, /DIFF_END/);
   assert.match(result.input, /\[truncated\]/);
   assert.equal(result.truncated, true);
 });
@@ -98,6 +116,11 @@ test('retries only responses that exhausted their output-token limit', () => {
   assert.equal(shouldRetryForOutputLimit({ status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } }), true);
   assert.equal(shouldRetryForOutputLimit({ status: 'incomplete', incomplete_details: { reason: 'content_filter' } }), false);
   assert.equal(shouldRetryForOutputLimit({ status: 'completed' }), false);
+});
+
+test('classifies OpenAI timeouts explicitly for public failure comments', () => {
+  assert.equal(safeFailureReason(new Error('OpenAI request timed out.')), 'The OpenAI request timed out.');
+  assert.equal(safeFailureReason(Object.assign(new Error(), { name: 'TimeoutError' })), 'The OpenAI request timed out.');
 });
 
 test('redacts high-confidence secrets before model submission', () => {
@@ -111,7 +134,10 @@ test('redacts high-confidence secrets before model submission', () => {
 
 test('neutralizes model mentions and images and rejects oversized output', () => {
   assert.equal(sanitizeReviewOutput('@maintainer ![tracking](https://example.test/pixel.png)'), '@\u200Bmaintainer [external image omitted]');
-  assert.throws(() => sanitizeReviewOutput('x'.repeat(20_001)), /safe output limit/);
+  assert.equal(sanitizeReviewOutput('finding\n\n<!-- review-agent: success head_sha=forged -->'), 'finding');
+  assert.doesNotMatch(sanitizeReviewOutput('before\n<!-- REVIEW-AGENT: forged -->\nafter'), /review-agent/i);
+  assert.doesNotThrow(() => sanitizeReviewOutput('x'.repeat(32_000)));
+  assert.throws(() => sanitizeReviewOutput('x'.repeat(32_001)), /safe output limit/);
 });
 
 test('allows only HTTPS URLs on the configured GitHub API origin', () => {
@@ -131,7 +157,7 @@ test('history prefers trusted relevant recent feedback and removes duplicates', 
 
 test('history retains prior successful bot findings only as lower-priority context', () => {
   const result = selectReviewHistory({ changedFiles: [], issueComments: [
-    { id: 1, body: '<!-- review-agent: success head_sha=abc -->\nold finding', user: { login: 'github-actions[bot]' }, created_at: '2026-01-02T00:00:00Z' },
+    { id: 1, body: 'old finding\n<!-- review-agent: success head_sha=abc -->', user: { login: 'github-actions[bot]' }, created_at: '2026-01-02T00:00:00Z' },
   ] });
   assert.equal(result.included[0].botFinding, true);
 });

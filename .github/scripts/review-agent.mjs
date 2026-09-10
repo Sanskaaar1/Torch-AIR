@@ -6,22 +6,22 @@ import { pathToFileURL } from 'node:url';
 
 const TRUSTED = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 const HISTORY_MAX_ITEMS = 30;
-const HISTORY_MAX_CHARS = 8_000;
+const HISTORY_MAX_CHARS = 24_000;
 const DIFF_MAX_CHARS = 120_000;
 const COMMAND_MAX_CHARS = 2_000;
-const OUTPUT_MAX_CHARS = 20_000;
-// Responses has no input-token limit parameter. 64k characters was calibrated
-// from the failed run (90,815 chars = 23,034 tokens) to target ~16k input
-// tokens while retaining the highest-priority review context.
-const INPUT_MAX_CHARS = 64_000;
+const PR_BODY_MAX_CHARS = 8_000;
+const FILES_MAX_CHARS = 8_000;
+const OUTPUT_MAX_CHARS = 32_000;
+// Responses has no input-token limit parameter. This ceiling targets roughly
+// 48k input tokens while giving the current diff its own non-competing budget.
+const INPUT_MAX_CHARS = 192_000;
 const INITIAL_MAX_OUTPUT_TOKENS = 4_096;
 const RETRY_MAX_OUTPUT_TOKENS = 6_144;
 const FORCE_COOLDOWN_MS = 15 * 60 * 1_000;
 const FORCE_MAX_PER_HEAD = 2;
 const BLOCKED_LABELS = new Set(['security', 'private', 'do-not-ai-review']);
 const BOT_MARKER = '<!-- review-agent: success head_sha=';
-const REVIEW_AGENT_MARKER = '<!-- review-agent:';
-const EXCLUDED_DIFF_PATH = /(?:^|\/)(?:node_modules|vendor|dist|build|coverage)\/|(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|cargo\.lock|poetry\.lock|composer\.lock)$|\.(?:min\.js|map|svg|png|jpe?g|gif|webp|ico|pdf|zip|gz|tar|mp3|mp4|woff2?)$/i;
+const FINAL_MARKER = /(?:^|\r?\n)<!-- review-agent: [^\r\n]* -->\r?$/;
 
 export function parseReviewCommand(body = '') {
   const match = /(?:^|\r?\n)[ \t]*@review-agent(?=$|[ \t])(?:[ \t]*(.*))?/.exec(body);
@@ -35,9 +35,17 @@ export function parseReviewCommand(body = '') {
 }
 
 export function isSuccessfulReviewResult(comment, headSha) {
-  return comment?.user?.login === 'github-actions[bot]' &&
-    (comment.body?.includes(`${BOT_MARKER}${headSha} -->`) ||
-      comment.body?.includes(`${BOT_MARKER}${headSha} attempt=force -->`));
+  if (comment?.user?.login !== 'github-actions[bot]') return false;
+  const escaped = String(headSha).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|\\r?\\n)${BOT_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${escaped}(?: attempt=force)? -->\\r?$`).test(String(comment.body ?? ''));
+}
+
+export function isSuccessfulForcedReview(comment, headSha) {
+  return isSuccessfulReviewResult(comment, headSha) && String(comment.body).replace(/\r$/, '').endsWith(`${BOT_MARKER}${headSha} attempt=force -->`);
+}
+
+export function selectSuccessfulForcedReviews(comments, headSha) {
+  return comments.filter((comment) => isSuccessfulForcedReview(comment, headSha));
 }
 
 export function extractResponseText(response) {
@@ -72,43 +80,45 @@ export function redactSensitiveText(value) {
 }
 
 export function sanitizeReviewOutput(value) {
-  const output = String(value ?? '').trim();
-  if (output.length > OUTPUT_MAX_CHARS) throw new Error('OpenAI returned review text that exceeded the safe output limit.');
-  return output
+  const output = String(value ?? '').trim()
+    .replace(/<!--\s*review-agent:[\s\S]*?-->/gi, '')
     .replace(/!\[[^\]]*\]\([^\s)]+\)/g, '[external image omitted]')
-    .replace(/@(?=[A-Za-z0-9-]{1,39}\b)/g, '@\u200B');
+    .replace(/@(?=[A-Za-z0-9-]{1,39}\b)/g, '@\u200B')
+    .trim();
+  if (output.length > OUTPUT_MAX_CHARS) throw new Error('OpenAI returned review text that exceeded the safe output limit.');
+  return output;
 }
 
-export function buildReviewableDiff(files = []) {
-  return truncate(files
-    .filter((file) => typeof file?.filename === 'string' && !EXCLUDED_DIFF_PATH.test(file.filename))
-    .flatMap((file) => typeof file.patch === 'string' && file.patch.trim()
-      ? [`diff --git a/${file.filename} b/${file.filename}\n${file.patch}`] : [])
-    .join('\n'), DIFF_MAX_CHARS);
+export function truncateDiff(diff) {
+  return truncate(diff, DIFF_MAX_CHARS);
+}
+
+export function validateGithubDiff(files, diff) {
+  if (files.length > 0 && !String(diff ?? '').trim()) throw new Error('GitHub reported changed files but returned no diff.');
+  return String(diff ?? '');
 }
 
 export function buildReviewInput({ commandPrompt, pr, headSha, files, diff, history, checklist, architectureApplies }) {
-  let input = '';
-  let truncated = false;
-  const append = (tag, value) => {
-    const opening = `<${tag}>\n`;
-    const closing = `\n</${tag}>`;
-    const remaining = INPUT_MAX_CHARS - input.length - opening.length - closing.length;
-    if (remaining <= 0) { truncated = true; return; }
-    const text = String(value ?? '');
-    const clipped = text.length <= remaining ? text : `${text.slice(0, Math.max(0, remaining - 12))}\n[truncated]`;
-    if (clipped.length < text.length) truncated = true;
-    input += `${opening}${clipped}${closing}\n\n`;
+  const raw = {
+    command: String(commandPrompt ?? '') || '(No additional prompt.)',
+    metadata: JSON.stringify({ number: pr.number, title: truncate(pr.title, 2_000), body: truncate(pr.body, PR_BODY_MAX_CHARS), head_sha: headSha }),
+    files: files.map((file) => `${file.filename} (+${file.additions}/-${file.deletions})`).join('\n'),
+    history: formatHistory(history),
+    diff: String(diff ?? ''),
   };
-  append('untrusted_command', truncate(commandPrompt, COMMAND_MAX_CHARS) || '(No additional prompt.)');
-  append('untrusted_pr_metadata', JSON.stringify({ number: pr.number, title: pr.title, body: truncate(pr.body, 8_000), head_sha: headSha }));
-  append('untrusted_changed_files', files.map((file) => `${file.filename} (+${file.additions}/-${file.deletions})`).join('\n'));
-  if (architectureApplies) append('trusted_architecture_checklist', checklist);
-  // History is supplemental but precedes the diff so prior unresolved findings
-  // remain available when a large diff must be clipped.
-  append('untrusted_review_history', formatHistory(history));
-  append('untrusted_pr_diff', diff);
-  return { input: input.trim(), truncated };
+  const values = {
+    command: truncate(raw.command, COMMAND_MAX_CHARS), metadata: raw.metadata,
+    files: truncate(raw.files, FILES_MAX_CHARS), history: truncate(raw.history, HISTORY_MAX_CHARS),
+    diff: truncateDiff(raw.diff), checklist: architectureApplies ? String(checklist ?? '') : '',
+  };
+  const section = (tag, value) => `<${tag}>\n${value}\n</${tag}>`;
+  const parts = [section('untrusted_command', values.command), section('untrusted_pr_metadata', values.metadata),
+    section('untrusted_changed_files', values.files),
+    ...(architectureApplies ? [section('trusted_architecture_checklist', values.checklist)] : []),
+    section('untrusted_review_history', values.history), section('untrusted_pr_diff', values.diff)];
+  const input = parts.join('\n\n');
+  if (input.length > INPUT_MAX_CHARS) throw new Error('Review input exceeded its fixed section budgets.');
+  return { input, truncated: Object.keys(raw).some((key) => values[key] !== raw[key]), diffTruncated: values.diff !== raw.diff };
 }
 
 export function shouldRetryForOutputLimit(response) {
@@ -121,12 +131,13 @@ export function isAllowedGithubApiUrl(value, apiUrl = process.env.GITHUB_API_URL
 
 function truncate(value, limit) {
   const text = String(value ?? '');
-  return text.length <= limit ? text : `${text.slice(0, limit)}\n[truncated]`;
+  const marker = '\n[truncated]';
+  return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - marker.length))}${marker}`;
 }
 
 function itemFromComment(comment, kind, changedPaths) {
   const body = String(comment.body ?? '');
-  const isReviewAgentBot = comment.user?.login === 'github-actions[bot]' && body.includes(REVIEW_AGENT_MARKER);
+  const isReviewAgentBot = comment.user?.login === 'github-actions[bot]' && FINAL_MARKER.test(body);
   const quotedFullDiff = /(?:^|\n)>? ?diff --git |(?:^|\n)```diff/.test(body);
   if (!body || (!isReviewAgentBot && quotedFullDiff)) return null;
   const path = comment.path ?? null;
@@ -211,12 +222,14 @@ function formatHistory(items) {
   if (!items.length) return '(No relevant prior review feedback selected.)';
   return items.map((item) => `- [${item.kind}; ${item.botFinding ? 'prior review-agent finding' : item.trusted ? 'trusted maintainer' : 'untrusted'}; ${item.createdAt}] ${item.author}${item.path ? ` on ${item.path}${item.line ? `:${item.line}` : ''}` : ''}:\n${item.body}`).join('\n');
 }
-function safeFailureReason(error) {
+export function safeFailureReason(error) {
   const message = error instanceof Error ? error.message : '';
   if (/OpenAI API key is not configured/.test(message)) return 'The OpenAI API key is not configured.';
   if (/Checked-out PR head/.test(message)) return 'The checked-out PR head could not be verified.';
   if (/GitHub API request failed/.test(message)) return message;
   if (/OpenAI request failed/.test(message)) return message;
+  if (/OpenAI request timed out/.test(message) || error?.name === 'TimeoutError') return 'The OpenAI request timed out.';
+  if (/GitHub reported changed files but returned no diff/.test(message)) return message;
   if (/OpenAI response did not complete/.test(message)) return 'OpenAI did not complete the review.';
   if (/OpenAI returned no review text/.test(message)) return message;
   if (/safe output limit/.test(message)) return 'OpenAI returned review text that exceeded the safe output limit.';
@@ -249,33 +262,33 @@ async function main() {
     const pr = await githubJson(`${api}/pulls/${prNumber}`);
     headSha = await exactHeadSha(process.env.PR_CHECKOUT_PATH);
     if (headSha !== pr.head.sha) throw new Error('Checked-out PR head did not match GitHub metadata.');
-    const [files, issueComments, reviewComments, reviews] = await Promise.all([
+    const [files, issueComments, reviewComments, reviews, diffResponse] = await Promise.all([
       paginate(`${api}/pulls/${prNumber}/files`), paginate(`${api}/issues/${prNumber}/comments`),
       paginate(`${api}/pulls/${prNumber}/comments`), paginate(`${api}/pulls/${prNumber}/reviews`),
+      githubRequest(`${api}/pulls/${prNumber}`, { headers: { Accept: 'application/vnd.github.v3.diff' } }),
     ]);
-    const diff = buildReviewableDiff(files);
-    const excludedFiles = files.filter((file) => EXCLUDED_DIFF_PATH.test(String(file.filename ?? ''))).length;
+    const rawDiff = validateGithubDiff(files, await diffResponse.text());
+    const diff = truncateDiff(rawDiff);
     const blockedLabel = (pr.labels ?? []).map((label) => String(label.name ?? '').toLowerCase()).find((name) => BLOCKED_LABELS.has(name));
     if (blockedLabel) {
       log('review_rejected', { pr_number: prNumber, reason: 'blocked_label', label: blockedLabel });
       await postComment(api, prNumber, `Review agent did not run because this PR has the \`${blockedLabel}\` label.\n\n<!-- review-agent: rejected reason=blocked_label -->`);
       return;
     }
-    const attempts = issueComments.filter((comment) => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(`head_sha=${headSha}`));
-    const latestAttempt = attempts.map((comment) => Date.parse(comment.created_at ?? comment.updated_at ?? '')).filter(Number.isFinite).sort((a, b) => b - a)[0];
-    if (command.force && latestAttempt && Date.now() - latestAttempt < FORCE_COOLDOWN_MS) {
+    const successfulForcedReviews = selectSuccessfulForcedReviews(issueComments, headSha);
+    const latestForcedSuccess = successfulForcedReviews.map((comment) => Date.parse(comment.created_at ?? comment.updated_at ?? '')).filter(Number.isFinite).sort((a, b) => b - a)[0];
+    if (command.force && latestForcedSuccess && Date.now() - latestForcedSuccess < FORCE_COOLDOWN_MS) {
       log('review_rejected', { pr_number: prNumber, reason: 'force_cooldown', head_sha: headSha });
       await postComment(api, prNumber, 'A review for this PR head ran recently. Wait 15 minutes before forcing another review.\n\n<!-- review-agent: rejected reason=force_cooldown -->');
       return;
     }
-    const forcedAttempts = attempts.filter((comment) => comment.body?.includes('attempt=force')).length;
-    if (command.force && forcedAttempts >= FORCE_MAX_PER_HEAD) {
+    if (command.force && successfulForcedReviews.length >= FORCE_MAX_PER_HEAD) {
       log('review_rejected', { pr_number: prNumber, reason: 'force_limit', head_sha: headSha });
       await postComment(api, prNumber, 'This PR head has reached its limit of two forced reviews. Push a new commit before requesting another.\n\n<!-- review-agent: rejected reason=force_limit -->');
       return;
     }
     const priorSuccess = issueComments.some((comment) => isSuccessfulReviewResult(comment, headSha));
-    log('review_context', { pr_number: prNumber, head_sha: headSha, changed_files: files.length, reviewable_files: files.length - excludedFiles, excluded_files: excludedFiles, diff_characters_sent: diff.length, deduplication_skipped: priorSuccess && !command.force });
+    log('review_context', { pr_number: prNumber, head_sha: headSha, changed_files: files.length, diff_characters_received: rawDiff.length, diff_characters_sent: diff.length, diff_truncated: diff.length !== rawDiff.length, deduplication_skipped: priorSuccess && !command.force });
     if (priorSuccess && !command.force) {
       await postComment(api, prNumber, formatDeduplicationComment(headSha));
       return;
@@ -292,7 +305,14 @@ async function main() {
     const { text: input, count: redactions } = redactSensitiveText(reviewInput.input);
     log('review_input', { pr_number: prNumber, input_characters: input.length, input_budget_characters: INPUT_MAX_CHARS, truncated: reviewInput.truncated, redactions });
     const started = Date.now();
-    const requestReview = (maxOutputTokens) => fetch('https://api.openai.com/v1/responses', { method: 'POST', signal: AbortSignal.timeout(60_000), headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'gpt-5.6-terra', text: { verbosity: 'medium' }, max_output_tokens: maxOutputTokens, store: false, instructions, input }) });
+    const requestReview = async (maxOutputTokens) => {
+      try {
+        return await fetch('https://api.openai.com/v1/responses', { method: 'POST', signal: AbortSignal.timeout(180_000), headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'gpt-5.6-terra', text: { verbosity: 'medium' }, max_output_tokens: maxOutputTokens, store: false, instructions, input }) });
+      } catch (error) {
+        if (error?.name === 'TimeoutError') throw new Error('OpenAI request timed out.');
+        throw error;
+      }
+    };
     let response = await requestReview(INITIAL_MAX_OUTPUT_TOKENS);
     if (!response.ok) throw new Error(`OpenAI request failed (${response.status}).`);
     let result = await response.json();
@@ -315,6 +335,7 @@ async function main() {
     if (!isCompletedResponse(result)) throw new Error('OpenAI response did not complete.');
     if (!extracted) throw new Error('OpenAI returned no review text.');
     const output = sanitizeReviewOutput(extracted);
+    if (!output) throw new Error('OpenAI returned no review text.');
     await postComment(api, prNumber, `${output}\n\n${BOT_MARKER}${headSha}${command.force ? ' attempt=force' : ''} -->`);
   } catch (error) {
     const safe = safeFailureReason(error);
