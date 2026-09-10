@@ -11,7 +11,7 @@ const DIFF_MAX_CHARS = 120_000;
 const BOT_MARKER = '<!-- review-agent: success head_sha=';
 
 export function parseReviewCommand(body = '') {
-  const match = /(?:^|\r?\n)@review-agent(?=$|[ \t])(?:[ \t]*(.*))?/.exec(body);
+  const match = /(?:^|\r?\n)[ \t]*@review-agent(?=$|[ \t])(?:[ \t]*(.*))?/.exec(body);
   if (!match) return null;
   const commandEnd = match.index + match[0].length;
   const firstLinePrompt = match[1] ?? '';

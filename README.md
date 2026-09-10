@@ -205,8 +205,9 @@ comment:
 @review-agent review error handling and follow up on prior feedback
 ```
 
-The command must start a comment line. Add `--force` to request another review
-of the same PR head when a successful review-agent result already exists:
+The command must be the first non-whitespace content on a comment line. Add
+`--force` to request another review of the same PR head when a successful
+review-agent result already exists:
 
 ```
 @review-agent --force re-check the latest changes

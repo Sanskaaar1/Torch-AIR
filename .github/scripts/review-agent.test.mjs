@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isSuccessfulReviewResult, parseReviewCommand, selectReviewHistory } from './review-agent.mjs';
 
-test('recognizes a command only at the beginning of a line and preserves prompt text', () => {
+test('recognizes a command as the first non-whitespace content on a line and preserves prompt text', () => {
   assert.equal(parseReviewCommand('please @review-agent'), null);
   assert.deepEqual(parseReviewCommand('notes\n@review-agent check parser\nwith context'), { force: false, prompt: 'check parser\nwith context' });
+  assert.deepEqual(parseReviewCommand('  @review-agent check indented command'), { force: false, prompt: 'check indented command' });
   assert.deepEqual(parseReviewCommand('@review-agent --force check again'), { force: true, prompt: 'check again' });
 });
 
