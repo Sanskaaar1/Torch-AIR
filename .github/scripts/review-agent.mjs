@@ -22,24 +22,6 @@ const BLOCKED_LABELS = new Set(['security', 'private', 'do-not-ai-review']);
 const BOT_MARKER = '<!-- review-agent: success head_sha=';
 const REVIEW_AGENT_MARKER = '<!-- review-agent:';
 const EXCLUDED_DIFF_PATH = /(?:^|\/)(?:node_modules|vendor|dist|build|coverage)\/|(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|cargo\.lock|poetry\.lock|composer\.lock)$|\.(?:min\.js|map|svg|png|jpe?g|gif|webp|ico|pdf|zip|gz|tar|mp3|mp4|woff2?)$/i;
-const REVIEW_SCHEMA = {
-  type: 'object', additionalProperties: false,
-  properties: {
-    summary: { type: 'string' },
-    findings: {
-      type: 'array',
-      items: {
-        type: 'object', additionalProperties: false,
-        properties: {
-          severity: { type: 'string', enum: ['high', 'medium', 'low'] },
-          path: { type: 'string' }, line: { type: 'integer', minimum: 1 }, body: { type: 'string' },
-        },
-        required: ['severity', 'path', 'line', 'body'],
-      },
-    },
-  },
-  required: ['summary', 'findings'],
-};
 
 export function parseReviewCommand(body = '') {
   const match = /(?:^|\r?\n)[ \t]*@review-agent(?=$|[ \t])(?:[ \t]*(.*))?/.exec(body);
@@ -131,23 +113,6 @@ export function buildReviewInput({ commandPrompt, pr, headSha, files, diff, hist
 
 export function shouldRetryForOutputLimit(response) {
   return response?.status === 'incomplete' && response?.incomplete_details?.reason === 'max_output_tokens';
-}
-
-export function parseStructuredReview(value) {
-  let review;
-  try { review = JSON.parse(value); } catch { throw new Error('OpenAI returned invalid structured review output.'); }
-  if (!review || typeof review.summary !== 'string' || !Array.isArray(review.findings) ||
-    review.findings.some((finding) => !finding || !['high', 'medium', 'low'].includes(finding.severity) ||
-      typeof finding.path !== 'string' || !Number.isInteger(finding.line) || finding.line < 1 ||
-      typeof finding.body !== 'string' || !finding.body.trim())) {
-    throw new Error('OpenAI returned invalid structured review output.');
-  }
-  return { summary: review.summary.trim(), findings: review.findings.map((finding) => ({ ...finding, path: finding.path.trim(), body: finding.body.trim() })) };
-}
-
-export function formatStructuredReview(review) {
-  const findings = review.findings.map((finding) => `- **${finding.severity.toUpperCase()}** — \`${finding.path}:${finding.line}\`: ${finding.body}`).join('\n');
-  return [findings ? `## Findings\n\n${findings}` : '', `## Summary\n\n${review.summary || 'No actionable issues found.'}`].filter(Boolean).join('\n\n');
 }
 
 export function isAllowedGithubApiUrl(value, apiUrl = process.env.GITHUB_API_URL ?? 'https://api.github.com') {
@@ -254,7 +219,6 @@ function safeFailureReason(error) {
   if (/OpenAI request failed/.test(message)) return message;
   if (/OpenAI response did not complete/.test(message)) return 'OpenAI did not complete the review.';
   if (/OpenAI returned no review text/.test(message)) return message;
-  if (/invalid structured review output/.test(message)) return 'OpenAI returned an invalid structured review.';
   if (/safe output limit/.test(message)) return 'OpenAI returned review text that exceeded the safe output limit.';
   if (/GitHub API URL was not allowed/.test(message)) return 'A GitHub API URL was rejected by the review agent.';
   return 'An internal review-agent error occurred.';
@@ -328,7 +292,7 @@ async function main() {
     const { text: input, count: redactions } = redactSensitiveText(reviewInput.input);
     log('review_input', { pr_number: prNumber, input_characters: input.length, input_budget_characters: INPUT_MAX_CHARS, truncated: reviewInput.truncated, redactions });
     const started = Date.now();
-    const requestReview = (maxOutputTokens) => fetch('https://api.openai.com/v1/responses', { method: 'POST', signal: AbortSignal.timeout(60_000), headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'gpt-5.6-terra', text: { verbosity: 'medium', format: { type: 'json_schema', name: 'pr_review', strict: true, schema: REVIEW_SCHEMA } }, max_output_tokens: maxOutputTokens, store: false, instructions, input }) });
+    const requestReview = (maxOutputTokens) => fetch('https://api.openai.com/v1/responses', { method: 'POST', signal: AbortSignal.timeout(60_000), headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'gpt-5.6-terra', text: { verbosity: 'medium' }, max_output_tokens: maxOutputTokens, store: false, instructions, input }) });
     let response = await requestReview(INITIAL_MAX_OUTPUT_TOKENS);
     if (!response.ok) throw new Error(`OpenAI request failed (${response.status}).`);
     let result = await response.json();
@@ -350,7 +314,7 @@ async function main() {
     });
     if (!isCompletedResponse(result)) throw new Error('OpenAI response did not complete.');
     if (!extracted) throw new Error('OpenAI returned no review text.');
-    const output = sanitizeReviewOutput(formatStructuredReview(parseStructuredReview(extracted)));
+    const output = sanitizeReviewOutput(extracted);
     await postComment(api, prNumber, `${output}\n\n${BOT_MARKER}${headSha}${command.force ? ' attempt=force' : ''} -->`);
   } catch (error) {
     const safe = safeFailureReason(error);
