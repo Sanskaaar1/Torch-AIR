@@ -205,9 +205,10 @@ comment:
 @review-agent review error handling and follow up on prior feedback
 ```
 
-The command must be the first non-whitespace content on a comment line. Add
-`--force` to request another review of the same PR head when a successful
-review-agent result already exists:
+The command must be the first non-whitespace content on a comment line. Only
+repository owners may add `--force` to request another review of the same PR
+head. Forced reviews have a 15-minute cooldown and a maximum of two attempts
+per PR head:
 
 ```
 @review-agent --force re-check the latest changes
@@ -226,9 +227,12 @@ avoid repeating resolved findings. No database, embeddings service, vector
 store, or persistent external memory is used.
 
 Repository administrators must configure the `OPENAI_API_KEY` Actions secret.
-The workflow requires only `contents: read`, `issues: write`, and
-`pull-requests: write`; the write scopes are used for the acknowledgement
-reaction and normal PR conversation comments.
+The workflow requires only `contents: read`, `pull-requests: read`, and
+`issues: write`; the write scope is used for the acknowledgement reaction and
+normal PR conversation comments. PRs labelled `security`, `private`, or
+`do-not-ai-review` are not sent to OpenAI. Repository administrators should
+protect `main` and require designated review for workflow, prompt, and review
+agent script changes.
 
 ## Repository Structure
 

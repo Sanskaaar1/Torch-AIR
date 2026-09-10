@@ -8,6 +8,11 @@ const TRUSTED = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 const HISTORY_MAX_ITEMS = 30;
 const HISTORY_MAX_CHARS = 24_000;
 const DIFF_MAX_CHARS = 120_000;
+const COMMAND_MAX_CHARS = 2_000;
+const OUTPUT_MAX_CHARS = 20_000;
+const FORCE_COOLDOWN_MS = 15 * 60 * 1_000;
+const FORCE_MAX_PER_HEAD = 2;
+const BLOCKED_LABELS = new Set(['security', 'private', 'do-not-ai-review']);
 const BOT_MARKER = '<!-- review-agent: success head_sha=';
 const REVIEW_AGENT_MARKER = '<!-- review-agent:';
 
@@ -46,6 +51,28 @@ export function isCompletedResponse(response) {
 
 export function formatDeduplicationComment(headSha) {
   return `No changes have been made since the previous successful review of this PR head, so no new review was run.\n\n<!-- review-agent: skipped head_sha=${headSha} -->`;
+}
+
+export function redactSensitiveText(value) {
+  let count = 0;
+  const redact = (text, pattern) => text.replace(pattern, () => { count += 1; return '[REDACTED]'; });
+  let text = String(value ?? '');
+  text = redact(text, /-----BEGIN(?: [A-Z]+)? PRIVATE KEY-----[\s\S]*?-----END(?: [A-Z]+)? PRIVATE KEY-----/g);
+  text = redact(text, /\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk(?:-proj)?-[A-Za-z0-9_-]{20,})\b/g);
+  text = redact(text, /\bAKIA[0-9A-Z]{16}\b/g);
+  return { text, count };
+}
+
+export function sanitizeReviewOutput(value) {
+  const output = String(value ?? '').trim();
+  if (output.length > OUTPUT_MAX_CHARS) throw new Error('OpenAI returned review text that exceeded the safe output limit.');
+  return output
+    .replace(/!\[[^\]]*\]\([^\s)]+\)/g, '[external image omitted]')
+    .replace(/@(?=[A-Za-z0-9-]{1,39}\b)/g, '@\u200B');
+}
+
+export function isAllowedGithubApiUrl(value, apiUrl = process.env.GITHUB_API_URL ?? 'https://api.github.com') {
+  try { return new URL(value).origin === new URL(apiUrl).origin && new URL(value).protocol === 'https:'; } catch { return false; }
 }
 
 function truncate(value, limit) {
@@ -107,10 +134,11 @@ function githubContext() {
 }
 function runUrl(repository) { return `https://github.com/${repository.full_name}/actions/runs/${process.env.GITHUB_RUN_ID ?? ''}`; }
 async function githubRequest(url, options = {}) {
+  if (!isAllowedGithubApiUrl(url)) throw new Error('GitHub API URL was not allowed.');
   const response = await fetch(url, { ...options, headers: {
     Accept: 'application/vnd.github+json', Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
     'X-GitHub-Api-Version': '2022-11-28', ...options.headers,
-  }});
+  }, signal: options.signal ?? AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`GitHub API request failed (${response.status}).`);
   return response;
 }
@@ -147,6 +175,8 @@ function safeFailureReason(error) {
   if (/OpenAI request failed/.test(message)) return message;
   if (/OpenAI response did not complete/.test(message)) return 'OpenAI did not complete the review.';
   if (/OpenAI returned no review text/.test(message)) return message;
+  if (/safe output limit/.test(message)) return 'OpenAI returned review text that exceeded the safe output limit.';
+  if (/GitHub API URL was not allowed/.test(message)) return 'A GitHub API URL was rejected by the review agent.';
   return 'An internal review-agent error occurred.';
 }
 async function main() {
@@ -160,10 +190,15 @@ async function main() {
   if (!valid) return;
   const api = event.repository.url;
   const prNumber = event.issue.number;
+  let headSha = null;
   try {
     await addReaction(api, event.comment.id);
+    if (command.force && event.comment.author_association !== 'OWNER') {
+      await postComment(api, prNumber, 'Only repository owners may use `@review-agent --force`; no review was run.\n\n<!-- review-agent: rejected reason=force_requires_owner -->');
+      return;
+    }
     const pr = await githubJson(`${api}/pulls/${prNumber}`);
-    const headSha = await exactHeadSha(process.env.PR_CHECKOUT_PATH);
+    headSha = await exactHeadSha(process.env.PR_CHECKOUT_PATH);
     if (headSha !== pr.head.sha) throw new Error('Checked-out PR head did not match GitHub metadata.');
     const [files, issueComments, reviewComments, reviews, diffResponse] = await Promise.all([
       paginate(`${api}/pulls/${prNumber}/files`), paginate(`${api}/issues/${prNumber}/comments`),
@@ -171,6 +206,25 @@ async function main() {
       githubRequest(`${api}/pulls/${prNumber}`, { headers: { Accept: 'application/vnd.github.v3.diff' } }),
     ]);
     const diff = truncate(await diffResponse.text(), DIFF_MAX_CHARS);
+    const blockedLabel = (pr.labels ?? []).map((label) => String(label.name ?? '').toLowerCase()).find((name) => BLOCKED_LABELS.has(name));
+    if (blockedLabel) {
+      log('review_rejected', { pr_number: prNumber, reason: 'blocked_label', label: blockedLabel });
+      await postComment(api, prNumber, `Review agent did not run because this PR has the \`${blockedLabel}\` label.\n\n<!-- review-agent: rejected reason=blocked_label -->`);
+      return;
+    }
+    const attempts = issueComments.filter((comment) => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(`head_sha=${headSha}`));
+    const latestAttempt = attempts.map((comment) => Date.parse(comment.created_at ?? comment.updated_at ?? '')).filter(Number.isFinite).sort((a, b) => b - a)[0];
+    if (command.force && latestAttempt && Date.now() - latestAttempt < FORCE_COOLDOWN_MS) {
+      log('review_rejected', { pr_number: prNumber, reason: 'force_cooldown', head_sha: headSha });
+      await postComment(api, prNumber, 'A review for this PR head ran recently. Wait 15 minutes before forcing another review.\n\n<!-- review-agent: rejected reason=force_cooldown -->');
+      return;
+    }
+    const forcedAttempts = attempts.filter((comment) => comment.body?.includes('attempt=force')).length;
+    if (command.force && forcedAttempts >= FORCE_MAX_PER_HEAD) {
+      log('review_rejected', { pr_number: prNumber, reason: 'force_limit', head_sha: headSha });
+      await postComment(api, prNumber, 'This PR head has reached its limit of two forced reviews. Push a new commit before requesting another.\n\n<!-- review-agent: rejected reason=force_limit -->');
+      return;
+    }
     const priorSuccess = issueComments.some((comment) => isSuccessfulReviewResult(comment, headSha));
     log('review_context', { pr_number: prNumber, head_sha: headSha, changed_files: files.length, diff_characters_sent: diff.length, deduplication_skipped: priorSuccess && !command.force });
     if (priorSuccess && !command.force) {
@@ -185,13 +239,15 @@ async function main() {
     ]);
     if (!process.env.OPENAI_API_KEY) throw new Error('The OpenAI API key is not configured.');
     const architectureApplies = files.some((file) => /(^|\/)(SKILL\.md|skills\/|frameworks\/|\.github\/prompts\/)/.test(file.filename));
-    const input = `UNTRUSTED CURRENT MAINTAINER COMMAND PROMPT:\n${command.prompt || '(No additional prompt.)'}\n\nUNTRUSTED PR METADATA:\n${JSON.stringify({ number: pr.number, title: pr.title, body: truncate(pr.body, 8_000), head_sha: headSha })}\n\nUNTRUSTED CHANGED FILES:\n${files.map((file) => `${file.filename} (+${file.additions}/-${file.deletions})`).join('\n')}\n\nUNTRUSTED PR DIFF:\n${diff}\n\nUNTRUSTED COMPACT REVIEW HISTORY:\n${formatHistory(history.included)}${architectureApplies ? `\n\nTORCH-AIR ARCHITECTURE CHECKLIST:\n${checklist}` : ''}`;
+    const rawInput = `UNTRUSTED CURRENT MAINTAINER COMMAND PROMPT:\n${truncate(command.prompt, COMMAND_MAX_CHARS) || '(No additional prompt.)'}\n\nUNTRUSTED PR METADATA:\n${JSON.stringify({ number: pr.number, title: pr.title, body: truncate(pr.body, 8_000), head_sha: headSha })}\n\nUNTRUSTED CHANGED FILES:\n${files.map((file) => `${file.filename} (+${file.additions}/-${file.deletions})`).join('\n')}\n\nUNTRUSTED PR DIFF:\n${diff}\n\nUNTRUSTED COMPACT REVIEW HISTORY:\n${formatHistory(history.included)}${architectureApplies ? `\n\nTORCH-AIR ARCHITECTURE CHECKLIST:\n${checklist}` : ''}`;
+    const { text: input, count: redactions } = redactSensitiveText(rawInput);
+    log('review_input', { pr_number: prNumber, input_characters: input.length, redactions });
     const started = Date.now();
-    const response = await fetch('https://api.openai.com/v1/responses', { method: 'POST', headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'gpt-5.6-terra', reasoning: { effort: 'medium' }, text: { verbosity: 'medium' }, store: false, instructions, input }) });
+    const response = await fetch('https://api.openai.com/v1/responses', { method: 'POST', signal: AbortSignal.timeout(60_000), headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'gpt-5.6-terra', reasoning: { effort: 'medium' }, text: { verbosity: 'medium' }, max_output_tokens: 1_200, store: false, instructions, input }) });
     const latencyMs = Date.now() - started;
     if (!response.ok) throw new Error(`OpenAI request failed (${response.status}).`);
     const result = await response.json();
-    const output = extractResponseText(result);
+    const output = sanitizeReviewOutput(extractResponseText(result));
     log('openai_response', {
       latency_ms: latencyMs,
       status: result.status ?? null,
@@ -201,11 +257,12 @@ async function main() {
     });
     if (!isCompletedResponse(result)) throw new Error('OpenAI response did not complete.');
     if (!output) throw new Error('OpenAI returned no review text.');
-    await postComment(api, prNumber, `${output}\n\n${BOT_MARKER}${headSha} -->`);
+    await postComment(api, prNumber, `${output}\n\n${BOT_MARKER}${headSha}${command.force ? ' attempt=force' : ''} -->`);
   } catch (error) {
     const safe = safeFailureReason(error);
     log('review_failure', { pr_number: prNumber, reason: safe });
-    await postComment(api, prNumber, `Review agent could not complete this run: ${safe} See [workflow logs](${runUrl(event.repository)}).\n\n<!-- review-agent: failure -->`).catch(() => {});
+    const marker = headSha ? `<!-- review-agent: failure head_sha=${headSha}${command.force ? ' attempt=force' : ''} -->` : '<!-- review-agent: failure -->';
+    await postComment(api, prNumber, `Review agent could not complete this run: ${safe} See [workflow logs](${runUrl(event.repository)}).\n\n${marker}`).catch(() => {});
     process.exitCode = 1;
   }
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractResponseText, formatDeduplicationComment, isCompletedResponse, isSuccessfulReviewResult, parseReviewCommand, selectReviewHistory } from './review-agent.mjs';
+import { extractResponseText, formatDeduplicationComment, isAllowedGithubApiUrl, isCompletedResponse, isSuccessfulReviewResult, parseReviewCommand, redactSensitiveText, sanitizeReviewOutput, selectReviewHistory } from './review-agent.mjs';
 
 const rawRestSuccess = {
   status: 'completed',
@@ -65,6 +65,26 @@ test('does not treat missing text or non-completed responses as successful revie
   for (const status of ['failed', 'cancelled', 'incomplete']) {
     assert.equal(isCompletedResponse({ status }), false);
   }
+});
+
+test('redacts high-confidence secrets before model submission', () => {
+  const value = 'token ghp_abcdefghijklmnopqrstuvwxyz1234567890 and sk-proj-abcdefghijklmnopqrstuvwxyz1234567890\n-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----';
+  const result = redactSensitiveText(value);
+  assert.equal(result.count, 3);
+  assert.equal(result.text.includes('ghp_'), false);
+  assert.equal(result.text.includes('sk-proj-'), false);
+  assert.equal(result.text.includes('BEGIN PRIVATE KEY'), false);
+});
+
+test('neutralizes model mentions and images and rejects oversized output', () => {
+  assert.equal(sanitizeReviewOutput('@maintainer ![tracking](https://example.test/pixel.png)'), '@\u200Bmaintainer [external image omitted]');
+  assert.throws(() => sanitizeReviewOutput('x'.repeat(20_001)), /safe output limit/);
+});
+
+test('allows only HTTPS URLs on the configured GitHub API origin', () => {
+  assert.equal(isAllowedGithubApiUrl('https://api.github.com/repos/a/b'), true);
+  assert.equal(isAllowedGithubApiUrl('https://attacker.example/repos/a/b'), false);
+  assert.equal(isAllowedGithubApiUrl('http://api.github.com/repos/a/b'), false);
 });
 
 test('history prefers trusted relevant recent feedback and removes duplicates', () => {
