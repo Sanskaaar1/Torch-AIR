@@ -26,6 +26,23 @@ export function isSuccessfulReviewResult(comment, headSha) {
     comment.body?.includes(`${BOT_MARKER}${headSha} -->`);
 }
 
+export function extractResponseText(response) {
+  const sdkText = typeof response?.output_text === 'string' ? response.output_text.trim() : '';
+  if (sdkText) return sdkText;
+
+  const parts = Array.isArray(response?.output) ? response.output.flatMap((item) => {
+    if (item?.type !== 'message' || !Array.isArray(item.content)) return [];
+    return item.content
+      .filter((part) => part?.type === 'output_text' && typeof part.text === 'string')
+      .map((part) => part.text);
+  }) : [];
+  return parts.join('\n').trim();
+}
+
+export function isCompletedResponse(response) {
+  return response?.status === 'completed';
+}
+
 function truncate(value, limit) {
   const text = String(value ?? '');
   return text.length <= limit ? text : `${text.slice(0, limit)}\n[truncated]`;
@@ -123,6 +140,7 @@ function safeFailureReason(error) {
   if (/Checked-out PR head/.test(message)) return 'The checked-out PR head could not be verified.';
   if (/GitHub API request failed/.test(message)) return message;
   if (/OpenAI request failed/.test(message)) return message;
+  if (/OpenAI response did not complete/.test(message)) return 'OpenAI did not complete the review.';
   if (/OpenAI returned no review text/.test(message)) return message;
   return 'An internal review-agent error occurred.';
 }
@@ -165,8 +183,15 @@ async function main() {
     const latencyMs = Date.now() - started;
     if (!response.ok) throw new Error(`OpenAI request failed (${response.status}).`);
     const result = await response.json();
-    log('openai_response', { latency_ms: latencyMs, usage: result.usage ?? null });
-    const output = String(result.output_text ?? '').trim();
+    const output = extractResponseText(result);
+    log('openai_response', {
+      latency_ms: latencyMs,
+      status: result.status ?? null,
+      output_items: Array.isArray(result.output) ? result.output.length : 0,
+      extracted_text_characters: output.length,
+      usage: result.usage ?? null,
+    });
+    if (!isCompletedResponse(result)) throw new Error('OpenAI response did not complete.');
     if (!output) throw new Error('OpenAI returned no review text.');
     await postComment(api, prNumber, `${output}\n\n${BOT_MARKER}${headSha} -->`);
   } catch (error) {
