@@ -196,6 +196,51 @@ Contributor tooling for reviewing assessment PRs against this repo's own
 conventions lives in
 [`.claude/skills/torch-air-architecture-review/README.md`](.claude/skills/torch-air-architecture-review/README.md).
 
+### Review Agent
+
+Maintainers can request a read-only review from a pull-request conversation
+comment:
+
+```
+@torch-air-review-agent review error handling and follow up on prior feedback
+```
+
+The command must be the first non-whitespace content on a comment line. Only
+repository owners may add `--force` to request another review of the same PR
+head. Successful forced reviews have a 15-minute cooldown and a maximum of two
+successful runs per PR head. Failures and timeouts consume neither:
+
+```
+@torch-air-review-agent --force re-check the latest changes
+```
+
+The GitHub Actions workflow accepts only `OWNER`, `MEMBER`, and
+`COLLABORATOR` comments on pull requests. It checks out the trusted default
+branch and the PR head only to read them; it never runs PR code, workflows,
+package hooks, tests, commits, pushes, merges, approvals, or formal
+request-changes reviews.
+
+Every invocation retrieves its review memory fresh from the current PR in
+GitHub: metadata, files/diff, review and conversation comments, and trusted
+maintainer feedback. This compact, bounded history helps follow-up reviews
+avoid repeating resolved findings. No database, embeddings service, vector
+store, or persistent external memory is used. The complete textual GitHub diff,
+including lockfiles, vendor code, build logic, generated artifacts, and SVGs,
+is included up to a 120,000-character cap; binary-change metadata is retained.
+Inputs use fixed section budgets under a 192,000-character ceiling (about 48k
+tokens), so metadata and history cannot displace the diff. Reviews are posted
+as Markdown.
+
+Repository administrators must configure the `OPENAI_API_KEY` Actions secret.
+The workflow requires only `contents: read`, `pull-requests: write`, and
+`issues: write`; the write scopes are used for the acknowledgement reaction and
+normal PR conversation comments. OpenAI requests allow 180 seconds and start
+with 4,096 output tokens, with one 6,144-token retry only when the first response
+reaches its output-token limit. PRs labelled `security`, `private`, or
+`do-not-ai-review` are not sent to OpenAI. Repository administrators should
+protect `main` and require designated review for workflow, prompt, and review
+agent script changes.
+
 ## Repository Structure
 
 ```
@@ -208,8 +253,16 @@ torch-air/
 │   └── skills/
 │       └── torch-air-architecture-review/
 │           ├── SKILL.md              # Reviews torch-air PRs against checklist.md
-│           ├── checklist.md          # Architecture review checklist for assessment PRs
+│           ├── checklist.md          # Canonical architecture review checklist
 │           └── README.md             # Usage docs for the architecture review skill
+├── .github/
+│   ├── prompts/
+│   │   ├── torch-air-review-agent.md # Review Agent behavior and output format
+│   │   └── architecture-review-checklist.md # Symlink to the canonical checklist
+│   ├── scripts/
+│   │   └── torch-air-review-agent.mjs # GitHub/Responses API integration
+│   └── workflows/
+│       └── torch-air-review-agent.yml # Maintainer-invoked PR workflow
 ├── frameworks/
 │   └── pytorch/
 │       ├── EVAL.md                   # PyTorch evaluation phases and probing instructions
