@@ -224,7 +224,10 @@ Every invocation retrieves its review memory fresh from the current PR in
 GitHub: metadata, files/diff, review and conversation comments, and trusted
 maintainer feedback. This compact, bounded history helps follow-up reviews
 avoid repeating resolved findings. No database, embeddings service, vector
-store, or persistent external memory is used.
+store, or persistent external memory is used. Lockfiles, generated output,
+source maps, and media are excluded from the model diff; the remaining diff is
+hard-capped. The model must return schema-validated findings before a comment
+is posted.
 
 Repository administrators must configure the `OPENAI_API_KEY` Actions secret.
 The workflow requires only `contents: read`, `pull-requests: read`, and

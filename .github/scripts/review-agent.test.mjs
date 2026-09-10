@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractResponseText, formatDeduplicationComment, isAllowedGithubApiUrl, isCompletedResponse, isSuccessfulReviewResult, parseReviewCommand, redactSensitiveText, sanitizeReviewOutput, selectReviewHistory } from './review-agent.mjs';
+import { buildReviewableDiff, extractResponseText, formatDeduplicationComment, formatStructuredReview, isAllowedGithubApiUrl, isCompletedResponse, isSuccessfulReviewResult, parseReviewCommand, parseStructuredReview, redactSensitiveText, sanitizeReviewOutput, selectReviewHistory } from './review-agent.mjs';
 
 const rawRestSuccess = {
   status: 'completed',
   output: [{
     type: 'message',
-    content: [{ type: 'output_text', text: '## Review\n\nNo blocking issues found.' }],
+    content: [{ type: 'output_text', text: '{"summary":"No blocking issues found.","findings":[]}' }],
   }],
 };
 
@@ -38,14 +38,15 @@ test('deduplication accepts only a successful bot marker for the exact head', ()
   assert.equal(isSuccessfulReviewResult(comment, 'abc'), true);
   assert.equal(isSuccessfulReviewResult(comment, 'def'), false);
   assert.equal(isSuccessfulReviewResult({ ...comment, body: '<!-- review-agent: failure -->' }, 'abc'), false);
+  assert.equal(isSuccessfulReviewResult({ ...comment, body: '<!-- review-agent: success head_sha=abc attempt=force -->' }, 'abc'), true);
   assert.equal(formatDeduplicationComment('abc'), 'No changes have been made since the previous successful review of this PR head, so no new review was run.\n\n<!-- review-agent: skipped head_sha=abc -->');
 });
 
 test('extracts raw REST output text and produces the normal success-marker body', () => {
-  const review = extractResponseText(rawRestSuccess);
-  assert.equal(review, '## Review\n\nNo blocking issues found.');
+  const review = formatStructuredReview(parseStructuredReview(extractResponseText(rawRestSuccess)));
+  assert.equal(review, '## Summary\n\nNo blocking issues found.');
   assert.equal(rawRestSuccess.status, 'completed');
-  assert.equal(`${review}\n\n<!-- review-agent: success head_sha=abc123 -->`, '## Review\n\nNo blocking issues found.\n\n<!-- review-agent: success head_sha=abc123 -->');
+  assert.equal(`${review}\n\n<!-- review-agent: success head_sha=abc123 -->`, '## Summary\n\nNo blocking issues found.\n\n<!-- review-agent: success head_sha=abc123 -->');
 });
 
 test('extracts multiple assistant output text parts in API order and ignores non-text output', () => {
@@ -65,6 +66,26 @@ test('does not treat missing text or non-completed responses as successful revie
   for (const status of ['failed', 'cancelled', 'incomplete']) {
     assert.equal(isCompletedResponse({ status }), false);
   }
+});
+
+test('keeps reviewable source patches and excludes lockfiles, generated files, and media', () => {
+  const diff = buildReviewableDiff([
+    { filename: 'src/app.js', patch: '@@ -1 +1 @@\n-old\n+new' },
+    { filename: 'package-lock.json', patch: '@@ -1 +1 @@\n-lock' },
+    { filename: 'dist/bundle.js', patch: '@@ -1 +1 @@\n-minified' },
+    { filename: 'assets/logo.svg', patch: '@@ -1 +1 @@\n-svg' },
+  ]);
+  assert.match(diff, /src\/app\.js/);
+  assert.doesNotMatch(diff, /package-lock|dist\/bundle|logo\.svg/);
+});
+
+test('validates and formats the structured review response before posting', () => {
+  const review = parseStructuredReview(JSON.stringify({
+    summary: 'Reviewed the changed parser path.',
+    findings: [{ severity: 'high', path: 'src/parser.js', line: 42, body: 'Validate the offset before indexing.' }],
+  }));
+  assert.equal(formatStructuredReview(review), '## Findings\n\n- **HIGH** — `src/parser.js:42`: Validate the offset before indexing.\n\n## Summary\n\nReviewed the changed parser path.');
+  assert.throws(() => parseStructuredReview('{"summary":"x","findings":[{"severity":"note"}]}'), /invalid structured review output/);
 });
 
 test('redacts high-confidence secrets before model submission', () => {

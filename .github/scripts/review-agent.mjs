@@ -15,6 +15,25 @@ const FORCE_MAX_PER_HEAD = 2;
 const BLOCKED_LABELS = new Set(['security', 'private', 'do-not-ai-review']);
 const BOT_MARKER = '<!-- review-agent: success head_sha=';
 const REVIEW_AGENT_MARKER = '<!-- review-agent:';
+const EXCLUDED_DIFF_PATH = /(?:^|\/)(?:node_modules|vendor|dist|build|coverage)\/|(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|cargo\.lock|poetry\.lock|composer\.lock)$|\.(?:min\.js|map|svg|png|jpe?g|gif|webp|ico|pdf|zip|gz|tar|mp3|mp4|woff2?)$/i;
+const REVIEW_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    summary: { type: 'string' },
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          severity: { type: 'string', enum: ['high', 'medium', 'low'] },
+          path: { type: 'string' }, line: { type: 'integer', minimum: 1 }, body: { type: 'string' },
+        },
+        required: ['severity', 'path', 'line', 'body'],
+      },
+    },
+  },
+  required: ['summary', 'findings'],
+};
 
 export function parseReviewCommand(body = '') {
   const match = /(?:^|\r?\n)[ \t]*@review-agent(?=$|[ \t])(?:[ \t]*(.*))?/.exec(body);
@@ -29,7 +48,8 @@ export function parseReviewCommand(body = '') {
 
 export function isSuccessfulReviewResult(comment, headSha) {
   return comment?.user?.login === 'github-actions[bot]' &&
-    comment.body?.includes(`${BOT_MARKER}${headSha} -->`);
+    (comment.body?.includes(`${BOT_MARKER}${headSha} -->`) ||
+      comment.body?.includes(`${BOT_MARKER}${headSha} attempt=force -->`));
 }
 
 export function extractResponseText(response) {
@@ -69,6 +89,31 @@ export function sanitizeReviewOutput(value) {
   return output
     .replace(/!\[[^\]]*\]\([^\s)]+\)/g, '[external image omitted]')
     .replace(/@(?=[A-Za-z0-9-]{1,39}\b)/g, '@\u200B');
+}
+
+export function buildReviewableDiff(files = []) {
+  return truncate(files
+    .filter((file) => typeof file?.filename === 'string' && !EXCLUDED_DIFF_PATH.test(file.filename))
+    .flatMap((file) => typeof file.patch === 'string' && file.patch.trim()
+      ? [`diff --git a/${file.filename} b/${file.filename}\n${file.patch}`] : [])
+    .join('\n'), DIFF_MAX_CHARS);
+}
+
+export function parseStructuredReview(value) {
+  let review;
+  try { review = JSON.parse(value); } catch { throw new Error('OpenAI returned invalid structured review output.'); }
+  if (!review || typeof review.summary !== 'string' || !Array.isArray(review.findings) ||
+    review.findings.some((finding) => !finding || !['high', 'medium', 'low'].includes(finding.severity) ||
+      typeof finding.path !== 'string' || !Number.isInteger(finding.line) || finding.line < 1 ||
+      typeof finding.body !== 'string' || !finding.body.trim())) {
+    throw new Error('OpenAI returned invalid structured review output.');
+  }
+  return { summary: review.summary.trim(), findings: review.findings.map((finding) => ({ ...finding, path: finding.path.trim(), body: finding.body.trim() })) };
+}
+
+export function formatStructuredReview(review) {
+  const findings = review.findings.map((finding) => `- **${finding.severity.toUpperCase()}** — \`${finding.path}:${finding.line}\`: ${finding.body}`).join('\n');
+  return [findings ? `## Findings\n\n${findings}` : '', `## Summary\n\n${review.summary || 'No actionable issues found.'}`].filter(Boolean).join('\n\n');
 }
 
 export function isAllowedGithubApiUrl(value, apiUrl = process.env.GITHUB_API_URL ?? 'https://api.github.com') {
@@ -175,6 +220,7 @@ function safeFailureReason(error) {
   if (/OpenAI request failed/.test(message)) return message;
   if (/OpenAI response did not complete/.test(message)) return 'OpenAI did not complete the review.';
   if (/OpenAI returned no review text/.test(message)) return message;
+  if (/invalid structured review output/.test(message)) return 'OpenAI returned an invalid structured review.';
   if (/safe output limit/.test(message)) return 'OpenAI returned review text that exceeded the safe output limit.';
   if (/GitHub API URL was not allowed/.test(message)) return 'A GitHub API URL was rejected by the review agent.';
   return 'An internal review-agent error occurred.';
@@ -200,12 +246,12 @@ async function main() {
     const pr = await githubJson(`${api}/pulls/${prNumber}`);
     headSha = await exactHeadSha(process.env.PR_CHECKOUT_PATH);
     if (headSha !== pr.head.sha) throw new Error('Checked-out PR head did not match GitHub metadata.');
-    const [files, issueComments, reviewComments, reviews, diffResponse] = await Promise.all([
+    const [files, issueComments, reviewComments, reviews] = await Promise.all([
       paginate(`${api}/pulls/${prNumber}/files`), paginate(`${api}/issues/${prNumber}/comments`),
       paginate(`${api}/pulls/${prNumber}/comments`), paginate(`${api}/pulls/${prNumber}/reviews`),
-      githubRequest(`${api}/pulls/${prNumber}`, { headers: { Accept: 'application/vnd.github.v3.diff' } }),
     ]);
-    const diff = truncate(await diffResponse.text(), DIFF_MAX_CHARS);
+    const diff = buildReviewableDiff(files);
+    const excludedFiles = files.filter((file) => EXCLUDED_DIFF_PATH.test(String(file.filename ?? ''))).length;
     const blockedLabel = (pr.labels ?? []).map((label) => String(label.name ?? '').toLowerCase()).find((name) => BLOCKED_LABELS.has(name));
     if (blockedLabel) {
       log('review_rejected', { pr_number: prNumber, reason: 'blocked_label', label: blockedLabel });
@@ -226,7 +272,7 @@ async function main() {
       return;
     }
     const priorSuccess = issueComments.some((comment) => isSuccessfulReviewResult(comment, headSha));
-    log('review_context', { pr_number: prNumber, head_sha: headSha, changed_files: files.length, diff_characters_sent: diff.length, deduplication_skipped: priorSuccess && !command.force });
+    log('review_context', { pr_number: prNumber, head_sha: headSha, changed_files: files.length, reviewable_files: files.length - excludedFiles, excluded_files: excludedFiles, diff_characters_sent: diff.length, deduplication_skipped: priorSuccess && !command.force });
     if (priorSuccess && !command.force) {
       await postComment(api, prNumber, formatDeduplicationComment(headSha));
       return;
@@ -239,24 +285,25 @@ async function main() {
     ]);
     if (!process.env.OPENAI_API_KEY) throw new Error('The OpenAI API key is not configured.');
     const architectureApplies = files.some((file) => /(^|\/)(SKILL\.md|skills\/|frameworks\/|\.github\/prompts\/)/.test(file.filename));
-    const rawInput = `UNTRUSTED CURRENT MAINTAINER COMMAND PROMPT:\n${truncate(command.prompt, COMMAND_MAX_CHARS) || '(No additional prompt.)'}\n\nUNTRUSTED PR METADATA:\n${JSON.stringify({ number: pr.number, title: pr.title, body: truncate(pr.body, 8_000), head_sha: headSha })}\n\nUNTRUSTED CHANGED FILES:\n${files.map((file) => `${file.filename} (+${file.additions}/-${file.deletions})`).join('\n')}\n\nUNTRUSTED PR DIFF:\n${diff}\n\nUNTRUSTED COMPACT REVIEW HISTORY:\n${formatHistory(history.included)}${architectureApplies ? `\n\nTORCH-AIR ARCHITECTURE CHECKLIST:\n${checklist}` : ''}`;
+    const rawInput = `<untrusted_command>\n${truncate(command.prompt, COMMAND_MAX_CHARS) || '(No additional prompt.)'}\n</untrusted_command>\n\n<untrusted_pr_metadata>\n${JSON.stringify({ number: pr.number, title: pr.title, body: truncate(pr.body, 8_000), head_sha: headSha })}\n</untrusted_pr_metadata>\n\n<untrusted_changed_files>\n${files.map((file) => `${file.filename} (+${file.additions}/-${file.deletions})`).join('\n')}\n</untrusted_changed_files>\n\n<untrusted_pr_diff>\n${diff}\n</untrusted_pr_diff>\n\n<untrusted_review_history>\n${formatHistory(history.included)}\n</untrusted_review_history>${architectureApplies ? `\n\n<trusted_architecture_checklist>\n${checklist}\n</trusted_architecture_checklist>` : ''}`;
     const { text: input, count: redactions } = redactSensitiveText(rawInput);
     log('review_input', { pr_number: prNumber, input_characters: input.length, redactions });
     const started = Date.now();
-    const response = await fetch('https://api.openai.com/v1/responses', { method: 'POST', signal: AbortSignal.timeout(60_000), headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'gpt-5.6-terra', reasoning: { effort: 'medium' }, text: { verbosity: 'medium' }, max_output_tokens: 1_200, store: false, instructions, input }) });
+    const response = await fetch('https://api.openai.com/v1/responses', { method: 'POST', signal: AbortSignal.timeout(60_000), headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'gpt-5.6-terra', reasoning: { effort: 'medium' }, text: { verbosity: 'medium', format: { type: 'json_schema', name: 'pr_review', strict: true, schema: REVIEW_SCHEMA } }, max_output_tokens: 1_200, store: false, instructions, input }) });
     const latencyMs = Date.now() - started;
     if (!response.ok) throw new Error(`OpenAI request failed (${response.status}).`);
     const result = await response.json();
-    const output = sanitizeReviewOutput(extractResponseText(result));
+    const extracted = extractResponseText(result);
     log('openai_response', {
       latency_ms: latencyMs,
       status: result.status ?? null,
       output_items: Array.isArray(result.output) ? result.output.length : 0,
-      extracted_text_characters: output.length,
+      extracted_text_characters: extracted.length,
       usage: result.usage ?? null,
     });
     if (!isCompletedResponse(result)) throw new Error('OpenAI response did not complete.');
-    if (!output) throw new Error('OpenAI returned no review text.');
+    if (!extracted) throw new Error('OpenAI returned no review text.');
+    const output = sanitizeReviewOutput(formatStructuredReview(parseStructuredReview(extracted)));
     await postComment(api, prNumber, `${output}\n\n${BOT_MARKER}${headSha}${command.force ? ' attempt=force' : ''} -->`);
   } catch (error) {
     const safe = safeFailureReason(error);
