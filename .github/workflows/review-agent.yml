@@ -1,4 +1,4 @@
-name: GPT PR assistant
+name: Review Agent
 
 on:
   issue_comment:
@@ -32,7 +32,7 @@ jobs:
       - name: Validate review-agent command
         id: command
         working-directory: trusted-base
-        run: node .github/scripts/gpt-pr-assistant.mjs --validate
+        run: node .github/scripts/review-agent.mjs --validate
 
       - name: Check out PR head without executing it
         if: steps.command.outputs.accepted == 'true'
@@ -49,4 +49,4 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PR_CHECKOUT_PATH: ${{ github.workspace }}/pr-head
-        run: node .github/scripts/gpt-pr-assistant.mjs
+        run: node .github/scripts/review-agent.mjs

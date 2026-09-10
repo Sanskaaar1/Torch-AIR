@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isSuccessfulReviewResult, parseReviewCommand, selectReviewHistory } from './gpt-pr-assistant.mjs';
+import { isSuccessfulReviewResult, parseReviewCommand, selectReviewHistory } from './review-agent.mjs';
 
 test('recognizes a command only at the beginning of a line and preserves prompt text', () => {
   assert.equal(parseReviewCommand('please @review-agent'), null);

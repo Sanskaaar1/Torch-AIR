@@ -153,14 +153,13 @@ async function main() {
     if (priorSuccess && !command.force) return;
     const history = selectReviewHistory({ reviewComments, issueComments, reviews, changedFiles: files });
     log('review_history', { comments_considered: history.considered, comments_included: history.included.length, history_characters_sent: history.chars });
-    const [instructions, automationChecklist, checklist] = await Promise.all([
-      fs.readFile(path.join(process.cwd(), '.github/prompts/gpt-pr-assistant.md'), 'utf8'),
+    const [instructions, checklist] = await Promise.all([
+      fs.readFile(path.join(process.cwd(), '.github/prompts/review-agent.md'), 'utf8'),
       fs.readFile(path.join(process.cwd(), '.github/prompts/architecture-review-checklist.md'), 'utf8'),
-      fs.readFile(path.join(process.cwd(), '.claude/skills/torch-air-architecture-review/checklist.md'), 'utf8'),
     ]);
     if (!process.env.OPENAI_API_KEY) throw new Error('The OpenAI API key is not configured.');
     const architectureApplies = files.some((file) => /(^|\/)(SKILL\.md|skills\/|frameworks\/|\.github\/prompts\/)/.test(file.filename));
-    const input = `UNTRUSTED CURRENT MAINTAINER COMMAND PROMPT:\n${command.prompt || '(No additional prompt.)'}\n\nUNTRUSTED PR METADATA:\n${JSON.stringify({ number: pr.number, title: pr.title, body: truncate(pr.body, 8_000), head_sha: headSha })}\n\nUNTRUSTED CHANGED FILES:\n${files.map((file) => `${file.filename} (+${file.additions}/-${file.deletions})`).join('\n')}\n\nUNTRUSTED PR DIFF:\n${diff}\n\nUNTRUSTED COMPACT REVIEW HISTORY:\n${formatHistory(history.included)}${architectureApplies ? `\n\nTORCH-AIR ARCHITECTURE AUTOMATION SCOPE:\n${automationChecklist}\n\nTORCH-AIR CANONICAL ARCHITECTURE CHECKLIST:\n${checklist}` : ''}`;
+    const input = `UNTRUSTED CURRENT MAINTAINER COMMAND PROMPT:\n${command.prompt || '(No additional prompt.)'}\n\nUNTRUSTED PR METADATA:\n${JSON.stringify({ number: pr.number, title: pr.title, body: truncate(pr.body, 8_000), head_sha: headSha })}\n\nUNTRUSTED CHANGED FILES:\n${files.map((file) => `${file.filename} (+${file.additions}/-${file.deletions})`).join('\n')}\n\nUNTRUSTED PR DIFF:\n${diff}\n\nUNTRUSTED COMPACT REVIEW HISTORY:\n${formatHistory(history.included)}${architectureApplies ? `\n\nTORCH-AIR ARCHITECTURE CHECKLIST:\n${checklist}` : ''}`;
     const started = Date.now();
     const response = await fetch('https://api.openai.com/v1/responses', { method: 'POST', headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'gpt-5.6-terra', reasoning: { effort: 'medium' }, text: { verbosity: 'medium' }, store: false, instructions, input }) });
     const latencyMs = Date.now() - started;

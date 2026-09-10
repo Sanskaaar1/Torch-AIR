@@ -196,7 +196,7 @@ Contributor tooling for reviewing assessment PRs against this repo's own
 conventions lives in
 [`.claude/skills/torch-air-architecture-review/README.md`](.claude/skills/torch-air-architecture-review/README.md).
 
-### PR review assistant
+### Review Agent
 
 Maintainers can request a read-only review from a pull-request conversation
 comment:
