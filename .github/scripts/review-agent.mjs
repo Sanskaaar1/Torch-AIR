@@ -9,6 +9,7 @@ const HISTORY_MAX_ITEMS = 30;
 const HISTORY_MAX_CHARS = 24_000;
 const DIFF_MAX_CHARS = 120_000;
 const BOT_MARKER = '<!-- review-agent: success head_sha=';
+const REVIEW_AGENT_MARKER = '<!-- review-agent:';
 
 export function parseReviewCommand(body = '') {
   const match = /(?:^|\r?\n)[ \t]*@review-agent(?=$|[ \t])(?:[ \t]*(.*))?/.exec(body);
@@ -43,6 +44,10 @@ export function isCompletedResponse(response) {
   return response?.status === 'completed';
 }
 
+export function formatDeduplicationComment(headSha) {
+  return `No changes have been made since the previous successful review of this PR head, so no new review was run.\n\n<!-- review-agent: skipped head_sha=${headSha} -->`;
+}
+
 function truncate(value, limit) {
   const text = String(value ?? '');
   return text.length <= limit ? text : `${text.slice(0, limit)}\n[truncated]`;
@@ -50,7 +55,7 @@ function truncate(value, limit) {
 
 function itemFromComment(comment, kind, changedPaths) {
   const body = String(comment.body ?? '');
-  const isReviewAgentBot = comment.user?.login === 'github-actions[bot]' && body.includes(BOT_MARKER);
+  const isReviewAgentBot = comment.user?.login === 'github-actions[bot]' && body.includes(REVIEW_AGENT_MARKER);
   const quotedFullDiff = /(?:^|\n)>? ?diff --git |(?:^|\n)```diff/.test(body);
   if (!body || (!isReviewAgentBot && quotedFullDiff)) return null;
   const path = comment.path ?? null;
@@ -168,7 +173,10 @@ async function main() {
     const diff = truncate(await diffResponse.text(), DIFF_MAX_CHARS);
     const priorSuccess = issueComments.some((comment) => isSuccessfulReviewResult(comment, headSha));
     log('review_context', { pr_number: prNumber, head_sha: headSha, changed_files: files.length, diff_characters_sent: diff.length, deduplication_skipped: priorSuccess && !command.force });
-    if (priorSuccess && !command.force) return;
+    if (priorSuccess && !command.force) {
+      await postComment(api, prNumber, formatDeduplicationComment(headSha));
+      return;
+    }
     const history = selectReviewHistory({ reviewComments, issueComments, reviews, changedFiles: files });
     log('review_history', { comments_considered: history.considered, comments_included: history.included.length, history_characters_sent: history.chars });
     const [instructions, checklist] = await Promise.all([

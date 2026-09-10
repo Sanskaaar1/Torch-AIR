@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractResponseText, isCompletedResponse, isSuccessfulReviewResult, parseReviewCommand, selectReviewHistory } from './review-agent.mjs';
+import { extractResponseText, formatDeduplicationComment, isCompletedResponse, isSuccessfulReviewResult, parseReviewCommand, selectReviewHistory } from './review-agent.mjs';
 
 const rawRestSuccess = {
   status: 'completed',
@@ -38,6 +38,7 @@ test('deduplication accepts only a successful bot marker for the exact head', ()
   assert.equal(isSuccessfulReviewResult(comment, 'abc'), true);
   assert.equal(isSuccessfulReviewResult(comment, 'def'), false);
   assert.equal(isSuccessfulReviewResult({ ...comment, body: '<!-- review-agent: failure -->' }, 'abc'), false);
+  assert.equal(formatDeduplicationComment('abc'), 'No changes have been made since the previous successful review of this PR head, so no new review was run.\n\n<!-- review-agent: skipped head_sha=abc -->');
 });
 
 test('extracts raw REST output text and produces the normal success-marker body', () => {
