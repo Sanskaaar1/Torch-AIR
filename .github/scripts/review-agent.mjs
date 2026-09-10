@@ -238,7 +238,12 @@ async function main() {
   const prNumber = event.issue.number;
   let headSha = null;
   try {
-    await addReaction(api, event.comment.id);
+    // A reaction is only an acknowledgement. Some repositories or token
+    // policies deny reactions even when normal issue comments are allowed;
+    // do not let that cosmetic operation prevent the requested review.
+    await addReaction(api, event.comment.id).catch((error) => {
+      log('review_warning', { pr_number: prNumber, operation: 'acknowledgement_reaction', reason: safeFailureReason(error) });
+    });
     if (command.force && event.comment.author_association !== 'OWNER') {
       await postComment(api, prNumber, 'Only repository owners may use `@review-agent --force`; no review was run.\n\n<!-- review-agent: rejected reason=force_requires_owner -->');
       return;
