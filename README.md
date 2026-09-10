@@ -241,8 +241,16 @@ torch-air/
 │   └── skills/
 │       └── torch-air-architecture-review/
 │           ├── SKILL.md              # Reviews torch-air PRs against checklist.md
-│           ├── checklist.md          # Architecture review checklist for assessment PRs
+│           ├── checklist.md          # Canonical architecture review checklist
 │           └── README.md             # Usage docs for the architecture review skill
+├── .github/
+│   ├── prompts/
+│   │   ├── review-agent.md           # Review Agent behavior and output format
+│   │   └── architecture-review-checklist.md # Symlink to the canonical checklist
+│   ├── scripts/
+│   │   └── review-agent.mjs          # GitHub/Responses API integration
+│   └── workflows/
+│       └── review-agent.yml          # Maintainer-invoked PR workflow
 ├── frameworks/
 │   └── pytorch/
 │       ├── EVAL.md                   # PyTorch evaluation phases and probing instructions
